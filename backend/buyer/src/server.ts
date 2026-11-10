@@ -111,7 +111,7 @@ app.post("/purchase", apiLimiter, requireToken, handlePurchase);
 const AGENT_CHAIN = [
   { agent: "Coral Protocol", task: "price-oracle" },
   { agent: "SendAI",         task: "uptime-monitor" },
-  { agent: "Swarms",         task: "whale-watcher" },
+  { agent: "Swarms",         task: "validator-score" },
 ];
 
 const chainLimiter = rateLimit({
