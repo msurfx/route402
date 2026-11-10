@@ -1,0 +1,303 @@
+diff --git a/backend/buyer/src/purchase.ts b/backend/buyer/src/purchase.ts
+index 64fe158..2dd907b 100644
+--- a/backend/buyer/src/purchase.ts
++++ b/backend/buyer/src/purchase.ts
+@@ -56,7 +56,11 @@ export interface PurchaseResult {
+  * in the same transaction, only after the transfer succeeds. One signature,
+  * atomically both loops.
+  */
+-export async function runPurchase(): Promise<PurchaseResult> {
++export async function runPurchase(
++  taskOverride?: string,
++  agentName?: string
++): Promise<PurchaseResult> {
++  const task = taskOverride ?? "network-report";
+   const connection = new Connection(RPC_URL, "confirmed");
+   const buyer = loadKeypair(
+     "BUYER_KEYPAIR_SECRET",
+@@ -66,7 +70,7 @@ export async function runPurchase(): Promise<PurchaseResult> {
+   const firstResponse = await fetch(`${SELLER_URL}/service`, {
+     method: "POST",
+     headers: { "Content-Type": "application/json" },
+-    body: JSON.stringify({ task: "network-report" }),
++    body: JSON.stringify({ task, ...(agentName ? { agent: agentName } : {}) }),
+   });
+ 
+   if (firstResponse.status !== 402) {
+@@ -155,7 +159,7 @@ export async function runPurchase(): Promise<PurchaseResult> {
+   const secondResponse = await fetch(`${SELLER_URL}/service`, {
+     method: "POST",
+     headers: { "Content-Type": "application/json" },
+-    body: JSON.stringify({ paymentSignature: signature, task: "network-report" }),
++    body: JSON.stringify({ paymentSignature: signature, task, ...(agentName ? { agent: agentName } : {}) }),
+   });
+ 
+   const body = await secondResponse.json();
+diff --git a/backend/buyer/src/server.ts b/backend/buyer/src/server.ts
+index 0fb9800..6623e78 100644
+--- a/backend/buyer/src/server.ts
++++ b/backend/buyer/src/server.ts
+@@ -107,6 +107,46 @@ async function handlePurchase(_req: express.Request, res: express.Response) {
+ app.post("/demo-purchase", demoLimiter, handlePurchase);
+ app.post("/purchase", apiLimiter, requireToken, handlePurchase);
+ 
++// Multi-agent chain demo: 3 named agents run sequential x402 purchases
++const AGENT_CHAIN = [
++  { agent: "Coral Protocol", task: "price-oracle" },
++  { agent: "SendAI",         task: "uptime-monitor" },
++  { agent: "Swarms",         task: "whale-watcher" },
++];
++
++const chainLimiter = rateLimit({
++  windowMs: 120_000,
++  max: 2,
++  standardHeaders: true,
++  legacyHeaders: false,
++  message: { error: "chain demo rate limit — try again in 2 minutes" },
++});
++
++app.post("/demo-chain", chainLimiter, async (_req, res) => {
++  const results: Array<{ agent: string; task: string; success: boolean; signature?: string; error?: string }> = [];
++  for (const step of AGENT_CHAIN) {
++    try {
++      const outcome = await runPurchase(step.task, step.agent);
++      results.push({
++        agent: step.agent,
++        task: step.task,
++        success: outcome.success,
++        signature: outcome.signature,
++        error: outcome.success ? undefined : outcome.message,
++      });
++    } catch (err: any) {
++      results.push({
++        agent: step.agent,
++        task: step.task,
++        success: false,
++        error: err?.message ?? "Unknown error",
++      });
++    }
++  }
++  const allOk = results.every((r) => r.success);
++  res.status(allOk ? 200 : 207).json({ chain: results, allSuccess: allOk });
++});
++
+ app.listen(PORT, () => {
+   console.log(`Buyer demo server listening on http://localhost:${PORT}`);
+   console.log(`POST /demo-purchase (public, rate-limited) or /purchase (token-gated) to trigger a purchase.`);
+diff --git a/backend/seller/src/index.ts b/backend/seller/src/index.ts
+index 9e3d3ed..b22a552 100644
+--- a/backend/seller/src/index.ts
++++ b/backend/seller/src/index.ts
+@@ -73,13 +73,15 @@ interface ActivityEvent {
+   step: string;
+   message: string;
+   signature?: string;
++  agent?: string;
+ }
+ const events: ActivityEvent[] = [];
+ let eventId = 0;
+-function logEvent(step: string, message: string, signature?: string) {
+-  events.unshift({ id: eventId++, timestamp: new Date().toISOString(), step, message, signature });
+-  if (events.length > 30) events.length = 30;
+-  console.log(`[${step}] ${message}`);
++function logEvent(step: string, message: string, signature?: string, agent?: string) {
++  events.unshift({ id: eventId++, timestamp: new Date().toISOString(), step, message, signature, agent });
++  if (events.length > 50) events.length = 50;
++  const agentTag = agent ? `[${agent}]` : "";
++  console.log(`[${step}]${agentTag} ${message}`);
+ }
+ 
+ app.get("/events", (_req, res) => {
+@@ -87,39 +89,40 @@ app.get("/events", (_req, res) => {
+ });
+ 
+ app.post("/service", serviceLimiter, async (req, res) => {
+-  const { paymentSignature, task: requestedTask, params } = req.body ?? {};
++  const { paymentSignature, task: requestedTask, params, agent: agentName } = req.body ?? {};
++  const agent = typeof agentName === "string" ? agentName.slice(0, 30) : undefined;
+   const task = requestedTask ?? "network-report";
+   if (!isSupportedTask(task)) {
+-    logEvent("receive_request", `Rejected unknown task "${String(task).slice(0, 40)}"`);
++    logEvent("receive_request", `Rejected unknown task "${String(task).slice(0, 40)}"`, undefined, agent);
+     return res.status(400).json({ error: "unsupported task", supportedTasks: SUPPORTED_TASKS });
+   }
+ 
+   if (!paymentSignature) {
+-    logEvent("receive_request", "Buyer requested service, no payment attached");
+-    logEvent("402_challenge", `Sent 402 — price ${buildPaymentRequirements(sellerTokenAccount, sellerAuthority.publicKey.toBase58(), protocolFeeBps).amount} base units`);
++    logEvent("receive_request", `${agent || "Buyer"} requested "${task}", no payment attached`, undefined, agent);
++    logEvent("402_challenge", `Sent 402 — price ${buildPaymentRequirements(sellerTokenAccount, sellerAuthority.publicKey.toBase58(), protocolFeeBps).amount} base units`, undefined, agent);
+     return res.status(402).json({
+       error: "payment required",
+       paymentRequirements: buildPaymentRequirements(sellerTokenAccount, sellerAuthority.publicKey.toBase58(), protocolFeeBps),
+     });
+   }
+ 
+-  logEvent("verify_payment", `Verifying signature ${paymentSignature.slice(0, 12)}...`, paymentSignature);
++  logEvent("verify_payment", `Verifying signature ${paymentSignature.slice(0, 12)}...`, paymentSignature, agent);
+ 
+   if (seenSignatures.has(paymentSignature)) {
+-    logEvent("verify_payment", "Rejected — signature already used", paymentSignature);
++    logEvent("verify_payment", "Rejected — signature already used", paymentSignature, agent);
+     return res.status(409).json({ error: "payment signature already used" });
+   }
+ 
+   const result = await verifyPayment(paymentSignature, sellerTokenAccount);
+ 
+   if (!result.ok) {
+-    logEvent("verify_payment", `Failed — ${result.reason}`, paymentSignature);
++    logEvent("verify_payment", `Failed — ${result.reason}`, paymentSignature, agent);
+     try {
+       await recordFailure(sellerAuthority);
+-      logEvent("reputation_update", "Recorded failure on-chain (seller self-reported)");
++      logEvent("reputation_update", "Recorded failure on-chain (seller self-reported)", undefined, agent);
+     } catch (err) {
+       console.error("record_failure failed:", err);
+-      logEvent("reputation_update", "Failed to record failure on-chain");
++      logEvent("reputation_update", "Failed to record failure on-chain", undefined, agent);
+     }
+     return res.status(402).json({
+       error: "payment verification failed",
+@@ -128,7 +131,7 @@ app.post("/service", serviceLimiter, async (req, res) => {
+     });
+   }
+ 
+-  logEvent("verify_payment", `Verified — ${result.amountPaid} base units received`, paymentSignature);
++  logEvent("verify_payment", `Verified — ${result.amountPaid} base units received`, paymentSignature, agent);
+   seenSignatures.add(paymentSignature);
+ 
+   let output;
+@@ -136,13 +139,13 @@ app.post("/service", serviceLimiter, async (req, res) => {
+     output = await performService(connection, task, params);
+   } catch (err) {
+     console.error("service execution failed:", err);
+-    logEvent("deliver_result", `Failed to perform task "${task}" after verified payment`);
++    logEvent("deliver_result", `Failed to perform task "${task}" after verified payment`, undefined, agent);
+     try {
+       await recordFailure(sellerAuthority);
+-      logEvent("reputation_update", "Recorded failure on-chain (seller self-reported)");
++      logEvent("reputation_update", "Recorded failure on-chain (seller self-reported)", undefined, agent);
+     } catch (recordErr) {
+       console.error("record_failure failed:", recordErr);
+-      logEvent("reputation_update", "Failed to record failure on-chain");
++      logEvent("reputation_update", "Failed to record failure on-chain", undefined, agent);
+     }
+     return res.status(500).json({ error: "service execution failed" });
+   }
+@@ -166,7 +169,7 @@ app.post("/service", serviceLimiter, async (req, res) => {
+       deliverMsg = `Delivered "${task}" (slot ${output.data.slot}, avg ${output.data.avgTps} TPS)`;
+   }
+   deliverMsg += " — buyer will record reputation on-chain";
+-  logEvent("deliver_result", deliverMsg, paymentSignature);
++  logEvent("deliver_result", deliverMsg, paymentSignature, agent);
+ 
+   return res.status(200).json({
+     task,
+diff --git a/frontend/app.js b/frontend/app.js
+index 223f3a4..7f8772a 100644
+--- a/frontend/app.js
++++ b/frontend/app.js
+@@ -328,11 +328,13 @@
+   }
+   function activityRow(e) {
+     var s = evSig(e), t = evTime(e), who = evSeller(e);
++    var agentName = e.agent || "";
+     var step = e.step || "";
+     var tag = STEP_TAGS[step];
+-    return h("li", { "data-step": step },
++    return h("li", { "data-step": step, "class": agentName ? "has-agent" : "" },
+       h("span", null,
+         tag ? h("span", { "class": "step-tag " + tag.cls, text: tag.label }) : "",
++        agentName ? h("span", { "class": "agent-tag", text: agentName }) : "",
+         evText(e),
+         who && B58.test(who) ? " (" + shortKey(who) + ")" : ""),
+       h("span", { "class": "when" }, t ? timeAgo(Math.floor(t)) + " " : "", s ? ext(solscanTx(s), "View on Solscan") : ""));
+@@ -439,6 +441,33 @@
+       poll_now();
+     });
+   }
++  /* ---------- agent chain demo ---------- */
++  function runChain() {
++    var btn = $("#run-chain"), out = $("#chain-result");
++    if (!btn || !out) return;
++    btn.disabled = true; btn.textContent = "Running chain..."; out.className = "demo-msg"; out.textContent = "";
++    var res = { ok: false, status: 0, body: null, aborted: false };
++    fetchJson(BUYER_URL, "/demo-chain", { method: "POST" }, 120000).then(function (r) { res = r; }, function () {}).then(function () {
++      if (res.ok && res.body && res.body.allSuccess) {
++        btn.textContent = "Chain complete!"; out.className = "demo-msg ok";
++        out.textContent = "3 agents completed x402 purchases: ";
++        (res.body.chain || []).forEach(function (s, i) {
++          if (i > 0) out.append(" → ");
++          out.append(h("strong", { text: s.agent }));
++          if (s.signature && SIG.test(s.signature)) { out.append(" "); out.append(ext(solscanTx(s.signature), "tx")); }
++        });
++      } else if (res.aborted) { btn.textContent = "Try again shortly"; out.className = "demo-msg err"; out.textContent = "Backend waking up. Try again in a moment."; }
++      else if (res.status === 429) { btn.textContent = "Rate limited"; out.className = "demo-msg err"; out.textContent = "Chain demo rate-limited. Try again in 2 minutes."; }
++      else {
++        btn.textContent = "Chain failed"; out.className = "demo-msg err";
++        var done = (res.body && res.body.chain || []).filter(function (s) { return s.success; }).length;
++        out.textContent = done + "/3 agents succeeded. Check the live feed for details.";
++      }
++      setTimeout(function () { btn.disabled = false; btn.textContent = "Run agent chain"; }, 5000);
++      poll_now();
++    });
++  }
++
+   var pollTimer = null;
+   function poll_now() { setTimeout(function () { fetchJson(SELLER_URL, "/events").then(function (r) { if (r.ok) { var l = evList(r.body); detectNew(l); state.events = l; renderAll(); } }); }, 1500); }
+ 
+@@ -460,6 +489,8 @@
+     var pitch = $("#pitch-link");
+     if (pitch && pitch.getAttribute("href").indexOf("__") === 0) pitch.hidden = true;
+     $("#run-purchase").addEventListener("click", runPurchase);
++    var chainBtn = $("#run-chain");
++    if (chainBtn) chainBtn.addEventListener("click", runChain);
+     $("#q").addEventListener("input", function (e) { state.q = e.target.value; state.page = 1; renderTable(); });
+     $("#f-tier").addEventListener("change", function (e) { state.tier = e.target.value; state.page = 1; renderTable(); });
+     $("#f-conf").addEventListener("change", function (e) { state.conf = e.target.value; state.page = 1; renderTable(); });
+diff --git a/frontend/dashboard.css b/frontend/dashboard.css
+index 8b77acc..47ed609 100644
+--- a/frontend/dashboard.css
++++ b/frontend/dashboard.css
+@@ -184,6 +184,10 @@ input[type=search],select{width:100%;font:inherit;padding:10px 12px;border:1px s
+ .tag-deliver{background:#dcfce7;color:#15803d}
+ .tag-rep{background:#fce7f3;color:#be185d}
+ .feed .step-tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border-radius:5px;margin-right:6px;white-space:nowrap}
++.feed .agent-tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:5px;margin-right:6px;white-space:nowrap;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
++.feed li.has-agent{border-left-color:#15803d;background:rgba(21,128,61,.03)}
++.chain-demo{border:1px solid #bbf7d0;background:linear-gradient(135deg,rgba(21,128,61,.03),rgba(67,56,202,.03))}
++.chain-demo .h3{color:#15803d}
+ .feed li{font-size:14px;border-left:3px solid var(--border);transition:border-color .2s}
+ .feed li[data-step="receive_request"]{border-left-color:#6d28d9}
+ .feed li[data-step="402_challenge"]{border-left-color:#f59e0b}
+diff --git a/frontend/index.html b/frontend/index.html
+index b2bc326..83f4c9d 100644
+--- a/frontend/index.html
++++ b/frontend/index.html
+@@ -57,7 +57,7 @@
+           <div class="card demo">
+             <div>
+               <h2 class="h3">Run a live demo payment</h2>
+-              <p class="muted">Triggers a real buyer to seller payment on Solana devnet, then records the buyer-signed reputation update.</p>
++              <p class="muted">Triggers a real buyer→seller payment on Solana devnet, then records the buyer-signed reputation update.</p>
+               <p id="purchase-result" class="demo-msg" role="status" aria-live="polite"></p>
+             </div>
+             <div class="demo-actions">
+@@ -65,6 +65,17 @@
+               <a class="btn btn-ghost" id="pitch-link" href="https://docs.google.com/presentation/d/1GvWJ6rleQPLb1GyJbQgu9UkdmJ0TiVEN3x9DBEZXuTs/edit?usp=sharing" target="_blank" rel="noopener">View pitch deck</a>
+             </div>
+           </div>
++
++          <div class="card demo chain-demo">
++            <div>
++              <h2 class="h3">🔗 Run agent chain</h2>
++              <p class="muted">Three external agents — <strong>Coral Protocol</strong>, <strong>SendAI</strong>, <strong>Swarms</strong> — each make a real x402 purchase in sequence. Watch them appear in the live feed below.</p>
++              <p id="chain-result" class="demo-msg" role="status" aria-live="polite"></p>
++            </div>
++            <div class="demo-actions">
++              <button class="btn btn-primary" id="run-chain" type="button">Run agent chain</button>
++            </div>
++          </div>
+         </div>
+       </section>
+ 

@@ -328,11 +328,13 @@
   }
   function activityRow(e) {
     var s = evSig(e), t = evTime(e), who = evSeller(e);
+    var agentName = e.agent || "";
     var step = e.step || "";
     var tag = STEP_TAGS[step];
-    return h("li", { "data-step": step },
+    return h("li", { "data-step": step, "class": agentName ? "has-agent" : "" },
       h("span", null,
         tag ? h("span", { "class": "step-tag " + tag.cls, text: tag.label }) : "",
+        agentName ? h("span", { "class": "agent-tag", text: agentName }) : "",
         evText(e),
         who && B58.test(who) ? " (" + shortKey(who) + ")" : ""),
       h("span", { "class": "when" }, t ? timeAgo(Math.floor(t)) + " " : "", s ? ext(solscanTx(s), "View on Solscan") : ""));
@@ -439,6 +441,33 @@
       poll_now();
     });
   }
+  /* ---------- agent chain demo ---------- */
+  function runChain() {
+    var btn = $("#run-chain"), out = $("#chain-result");
+    if (!btn || !out) return;
+    btn.disabled = true; btn.textContent = "Running chain..."; out.className = "demo-msg"; out.textContent = "";
+    var res = { ok: false, status: 0, body: null, aborted: false };
+    fetchJson(BUYER_URL, "/demo-chain", { method: "POST" }, 120000).then(function (r) { res = r; }, function () {}).then(function () {
+      if (res.ok && res.body && res.body.allSuccess) {
+        btn.textContent = "Chain complete!"; out.className = "demo-msg ok";
+        out.textContent = "3 agents completed x402 purchases: ";
+        (res.body.chain || []).forEach(function (s, i) {
+          if (i > 0) out.append(" → ");
+          out.append(h("strong", { text: s.agent }));
+          if (s.signature && SIG.test(s.signature)) { out.append(" "); out.append(ext(solscanTx(s.signature), "tx")); }
+        });
+      } else if (res.aborted) { btn.textContent = "Try again shortly"; out.className = "demo-msg err"; out.textContent = "Backend waking up. Try again in a moment."; }
+      else if (res.status === 429) { btn.textContent = "Rate limited"; out.className = "demo-msg err"; out.textContent = "Chain demo rate-limited. Try again in 2 minutes."; }
+      else {
+        btn.textContent = "Chain failed"; out.className = "demo-msg err";
+        var done = (res.body && res.body.chain || []).filter(function (s) { return s.success; }).length;
+        out.textContent = done + "/3 agents succeeded. Check the live feed for details.";
+      }
+      setTimeout(function () { btn.disabled = false; btn.textContent = "Run agent chain"; }, 5000);
+      poll_now();
+    });
+  }
+
   var pollTimer = null;
   function poll_now() { setTimeout(function () { fetchJson(SELLER_URL, "/events").then(function (r) { if (r.ok) { var l = evList(r.body); detectNew(l); state.events = l; renderAll(); } }); }, 1500); }
 
@@ -460,6 +489,8 @@
     var pitch = $("#pitch-link");
     if (pitch && pitch.getAttribute("href").indexOf("__") === 0) pitch.hidden = true;
     $("#run-purchase").addEventListener("click", runPurchase);
+    var chainBtn = $("#run-chain");
+    if (chainBtn) chainBtn.addEventListener("click", runChain);
     $("#q").addEventListener("input", function (e) { state.q = e.target.value; state.page = 1; renderTable(); });
     $("#f-tier").addEventListener("change", function (e) { state.tier = e.target.value; state.page = 1; renderTable(); });
     $("#f-conf").addEventListener("change", function (e) { state.conf = e.target.value; state.page = 1; renderTable(); });

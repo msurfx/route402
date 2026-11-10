@@ -184,6 +184,10 @@ input[type=search],select{width:100%;font:inherit;padding:10px 12px;border:1px s
 .tag-deliver{background:#dcfce7;color:#15803d}
 .tag-rep{background:#fce7f3;color:#be185d}
 .feed .step-tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border-radius:5px;margin-right:6px;white-space:nowrap}
+.feed .agent-tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:5px;margin-right:6px;white-space:nowrap;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
+.feed li.has-agent{border-left-color:#15803d;background:rgba(21,128,61,.03)}
+.chain-demo{border:1px solid #bbf7d0;background:linear-gradient(135deg,rgba(21,128,61,.03),rgba(67,56,202,.03))}
+.chain-demo .h3{color:#15803d}
 .feed li{font-size:14px;border-left:3px solid var(--border);transition:border-color .2s}
 .feed li[data-step="receive_request"]{border-left-color:#6d28d9}
 .feed li[data-step="402_challenge"]{border-left-color:#f59e0b}

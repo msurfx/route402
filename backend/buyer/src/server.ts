@@ -107,6 +107,46 @@ async function handlePurchase(_req: express.Request, res: express.Response) {
 app.post("/demo-purchase", demoLimiter, handlePurchase);
 app.post("/purchase", apiLimiter, requireToken, handlePurchase);
 
+// Multi-agent chain demo: 3 named agents run sequential x402 purchases
+const AGENT_CHAIN = [
+  { agent: "Coral Protocol", task: "price-oracle" },
+  { agent: "SendAI",         task: "uptime-monitor" },
+  { agent: "Swarms",         task: "whale-watcher" },
+];
+
+const chainLimiter = rateLimit({
+  windowMs: 120_000,
+  max: 2,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "chain demo rate limit — try again in 2 minutes" },
+});
+
+app.post("/demo-chain", chainLimiter, async (_req, res) => {
+  const results: Array<{ agent: string; task: string; success: boolean; signature?: string; error?: string }> = [];
+  for (const step of AGENT_CHAIN) {
+    try {
+      const outcome = await runPurchase(step.task, step.agent);
+      results.push({
+        agent: step.agent,
+        task: step.task,
+        success: outcome.success,
+        signature: outcome.signature,
+        error: outcome.success ? undefined : outcome.message,
+      });
+    } catch (err: any) {
+      results.push({
+        agent: step.agent,
+        task: step.task,
+        success: false,
+        error: err?.message ?? "Unknown error",
+      });
+    }
+  }
+  const allOk = results.every((r) => r.success);
+  res.status(allOk ? 200 : 207).json({ chain: results, allSuccess: allOk });
+});
+
 app.listen(PORT, () => {
   console.log(`Buyer demo server listening on http://localhost:${PORT}`);
   console.log(`POST /demo-purchase (public, rate-limited) or /purchase (token-gated) to trigger a purchase.`);

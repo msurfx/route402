@@ -57,12 +57,23 @@
           <div class="card demo">
             <div>
               <h2 class="h3">Run a live demo payment</h2>
-              <p class="muted">Triggers a real buyer to seller payment on Solana devnet, then records the buyer-signed reputation update.</p>
+              <p class="muted">Triggers a real buyer→seller payment on Solana devnet, then records the buyer-signed reputation update.</p>
               <p id="purchase-result" class="demo-msg" role="status" aria-live="polite"></p>
             </div>
             <div class="demo-actions">
               <button class="btn btn-primary" id="run-purchase" type="button">Run purchase</button>
               <a class="btn btn-ghost" id="pitch-link" href="https://docs.google.com/presentation/d/1GvWJ6rleQPLb1GyJbQgu9UkdmJ0TiVEN3x9DBEZXuTs/edit?usp=sharing" target="_blank" rel="noopener">View pitch deck</a>
+            </div>
+          </div>
+
+          <div class="card demo chain-demo">
+            <div>
+              <h2 class="h3">🔗 Run agent chain</h2>
+              <p class="muted">Three external agents — <strong>Coral Protocol</strong>, <strong>SendAI</strong>, <strong>Swarms</strong> — each make a real x402 purchase in sequence. Watch them appear in the live feed below.</p>
+              <p id="chain-result" class="demo-msg" role="status" aria-live="polite"></p>
+            </div>
+            <div class="demo-actions">
+              <button class="btn btn-primary" id="run-chain" type="button">Run agent chain</button>
             </div>
           </div>
         </div>

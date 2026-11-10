@@ -56,7 +56,11 @@ export interface PurchaseResult {
  * in the same transaction, only after the transfer succeeds. One signature,
  * atomically both loops.
  */
-export async function runPurchase(): Promise<PurchaseResult> {
+export async function runPurchase(
+  taskOverride?: string,
+  agentName?: string
+): Promise<PurchaseResult> {
+  const task = taskOverride ?? "network-report";
   const connection = new Connection(RPC_URL, "confirmed");
   const buyer = loadKeypair(
     "BUYER_KEYPAIR_SECRET",
@@ -66,7 +70,7 @@ export async function runPurchase(): Promise<PurchaseResult> {
   const firstResponse = await fetch(`${SELLER_URL}/service`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ task: "network-report" }),
+    body: JSON.stringify({ task, ...(agentName ? { agent: agentName } : {}) }),
   });
 
   if (firstResponse.status !== 402) {
@@ -155,7 +159,7 @@ export async function runPurchase(): Promise<PurchaseResult> {
   const secondResponse = await fetch(`${SELLER_URL}/service`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ paymentSignature: signature, task: "network-report" }),
+    body: JSON.stringify({ paymentSignature: signature, task, ...(agentName ? { agent: agentName } : {}) }),
   });
 
   const body = await secondResponse.json();

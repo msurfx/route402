@@ -73,13 +73,15 @@ interface ActivityEvent {
   step: string;
   message: string;
   signature?: string;
+  agent?: string;
 }
 const events: ActivityEvent[] = [];
 let eventId = 0;
-function logEvent(step: string, message: string, signature?: string) {
-  events.unshift({ id: eventId++, timestamp: new Date().toISOString(), step, message, signature });
-  if (events.length > 30) events.length = 30;
-  console.log(`[${step}] ${message}`);
+function logEvent(step: string, message: string, signature?: string, agent?: string) {
+  events.unshift({ id: eventId++, timestamp: new Date().toISOString(), step, message, signature, agent });
+  if (events.length > 50) events.length = 50;
+  const agentTag = agent ? `[${agent}]` : "";
+  console.log(`[${step}]${agentTag} ${message}`);
 }
 
 app.get("/events", (_req, res) => {
@@ -87,39 +89,40 @@ app.get("/events", (_req, res) => {
 });
 
 app.post("/service", serviceLimiter, async (req, res) => {
-  const { paymentSignature, task: requestedTask, params } = req.body ?? {};
+  const { paymentSignature, task: requestedTask, params, agent: agentName } = req.body ?? {};
+  const agent = typeof agentName === "string" ? agentName.slice(0, 30) : undefined;
   const task = requestedTask ?? "network-report";
   if (!isSupportedTask(task)) {
-    logEvent("receive_request", `Rejected unknown task "${String(task).slice(0, 40)}"`);
+    logEvent("receive_request", `Rejected unknown task "${String(task).slice(0, 40)}"`, undefined, agent);
     return res.status(400).json({ error: "unsupported task", supportedTasks: SUPPORTED_TASKS });
   }
 
   if (!paymentSignature) {
-    logEvent("receive_request", "Buyer requested service, no payment attached");
-    logEvent("402_challenge", `Sent 402 — price ${buildPaymentRequirements(sellerTokenAccount, sellerAuthority.publicKey.toBase58(), protocolFeeBps).amount} base units`);
+    logEvent("receive_request", `${agent || "Buyer"} requested "${task}", no payment attached`, undefined, agent);
+    logEvent("402_challenge", `Sent 402 — price ${buildPaymentRequirements(sellerTokenAccount, sellerAuthority.publicKey.toBase58(), protocolFeeBps).amount} base units`, undefined, agent);
     return res.status(402).json({
       error: "payment required",
       paymentRequirements: buildPaymentRequirements(sellerTokenAccount, sellerAuthority.publicKey.toBase58(), protocolFeeBps),
     });
   }
 
-  logEvent("verify_payment", `Verifying signature ${paymentSignature.slice(0, 12)}...`, paymentSignature);
+  logEvent("verify_payment", `Verifying signature ${paymentSignature.slice(0, 12)}...`, paymentSignature, agent);
 
   if (seenSignatures.has(paymentSignature)) {
-    logEvent("verify_payment", "Rejected — signature already used", paymentSignature);
+    logEvent("verify_payment", "Rejected — signature already used", paymentSignature, agent);
     return res.status(409).json({ error: "payment signature already used" });
   }
 
   const result = await verifyPayment(paymentSignature, sellerTokenAccount);
 
   if (!result.ok) {
-    logEvent("verify_payment", `Failed — ${result.reason}`, paymentSignature);
+    logEvent("verify_payment", `Failed — ${result.reason}`, paymentSignature, agent);
     try {
       await recordFailure(sellerAuthority);
-      logEvent("reputation_update", "Recorded failure on-chain (seller self-reported)");
+      logEvent("reputation_update", "Recorded failure on-chain (seller self-reported)", undefined, agent);
     } catch (err) {
       console.error("record_failure failed:", err);
-      logEvent("reputation_update", "Failed to record failure on-chain");
+      logEvent("reputation_update", "Failed to record failure on-chain", undefined, agent);
     }
     return res.status(402).json({
       error: "payment verification failed",
@@ -128,7 +131,7 @@ app.post("/service", serviceLimiter, async (req, res) => {
     });
   }
 
-  logEvent("verify_payment", `Verified — ${result.amountPaid} base units received`, paymentSignature);
+  logEvent("verify_payment", `Verified — ${result.amountPaid} base units received`, paymentSignature, agent);
   seenSignatures.add(paymentSignature);
 
   let output;
@@ -136,13 +139,13 @@ app.post("/service", serviceLimiter, async (req, res) => {
     output = await performService(connection, task, params);
   } catch (err) {
     console.error("service execution failed:", err);
-    logEvent("deliver_result", `Failed to perform task "${task}" after verified payment`);
+    logEvent("deliver_result", `Failed to perform task "${task}" after verified payment`, undefined, agent);
     try {
       await recordFailure(sellerAuthority);
-      logEvent("reputation_update", "Recorded failure on-chain (seller self-reported)");
+      logEvent("reputation_update", "Recorded failure on-chain (seller self-reported)", undefined, agent);
     } catch (recordErr) {
       console.error("record_failure failed:", recordErr);
-      logEvent("reputation_update", "Failed to record failure on-chain");
+      logEvent("reputation_update", "Failed to record failure on-chain", undefined, agent);
     }
     return res.status(500).json({ error: "service execution failed" });
   }
@@ -166,7 +169,7 @@ app.post("/service", serviceLimiter, async (req, res) => {
       deliverMsg = `Delivered "${task}" (slot ${output.data.slot}, avg ${output.data.avgTps} TPS)`;
   }
   deliverMsg += " — buyer will record reputation on-chain";
-  logEvent("deliver_result", deliverMsg, paymentSignature);
+  logEvent("deliver_result", deliverMsg, paymentSignature, agent);
 
   return res.status(200).json({
     task,
