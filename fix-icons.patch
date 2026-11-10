@@ -1,0 +1,97 @@
+diff --git a/frontend/dashboard.css b/frontend/dashboard.css
+index 47ed609..0430cbd 100644
+--- a/frontend/dashboard.css
++++ b/frontend/dashboard.css
+@@ -89,7 +89,7 @@ a:hover{color:var(--primary-hover)}
+ .agent-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s4)}
+ .agent-mini{padding:var(--s4)}
+ .agent-mini-head{display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s3)}
+-.agent-mini-icon{font-size:20px}
++.agent-mini-icon{width:28px;height:28px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;font-family:var(--mono)}
+ .agent-mini-name{font-weight:700;font-size:15px;flex:1}
+ .agent-mini-val{font-size:clamp(22px,4vw,32px);font-weight:800;line-height:1.2;margin-bottom:var(--s2);min-height:32px}
+ .agent-mini-val.skel{height:32px;width:140px;border-radius:var(--r);background:var(--border);animation:pulse 1.5s infinite}
+@@ -104,7 +104,7 @@ a:hover{color:var(--primary-hover)}
+ .compat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s4)}
+ .compat-card{text-decoration:none;color:var(--text);transition:border-color .15s,box-shadow .15s;cursor:pointer}
+ .compat-card:hover{border-color:var(--primary);box-shadow:0 4px 20px rgba(67,56,202,.1);color:var(--text)}
+-.compat-icon{font-size:28px;margin-bottom:var(--s2)}
++.compat-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;margin-bottom:var(--s2);font-family:var(--mono)}
+ .compat-tag{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:3px 10px;border-radius:6px;background:var(--primary-soft);color:var(--primary);margin-top:var(--s2)}
+ 
+ @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+diff --git a/frontend/index.html b/frontend/index.html
+index 83f4c9d..fa983f5 100644
+--- a/frontend/index.html
++++ b/frontend/index.html
+@@ -132,7 +132,7 @@
+             <!-- Uptime Monitor -->
+             <div class="card agent-mini" id="agent-uptime">
+               <div class="agent-mini-head">
+-                <span class="agent-mini-icon">🟢</span>
++                <span class="agent-mini-icon" style="background:#0e7490;color:#fff">U</span>
+                 <span class="agent-mini-name">Uptime Monitor</span>
+                 <span class="oracle-badge">LIVE</span>
+               </div>
+@@ -147,7 +147,7 @@
+             <!-- Whale Watcher -->
+             <div class="card agent-mini" id="agent-whales">
+               <div class="agent-mini-head">
+-                <span class="agent-mini-icon">🐋</span>
++                <span class="agent-mini-icon" style="background:#7c3aed;color:#fff">W</span>
+                 <span class="agent-mini-name">Whale Watcher</span>
+                 <span class="oracle-badge">LIVE</span>
+               </div>
+@@ -159,7 +159,7 @@
+             <!-- Validator Scorecard -->
+             <div class="card agent-mini" id="agent-validators">
+               <div class="agent-mini-head">
+-                <span class="agent-mini-icon">🏛️</span>
++                <span class="agent-mini-icon" style="background:#ea580c;color:#fff">V</span>
+                 <span class="agent-mini-name">Validator Score</span>
+                 <span class="oracle-badge">LIVE</span>
+               </div>
+@@ -186,37 +186,37 @@
+           </div>
+           <div class="compat-grid">
+             <a class="card compat-card" href="https://coralprotocol.org" target="_blank" rel="noopener">
+-              <div class="compat-icon">🪸</div>
++              <div class="compat-icon" style="background:#0e7490;color:#fff">C</div>
+               <h3 class="h4">Coral Protocol</h3>
+               <p class="muted">MCP-native agent marketplace with escrow payments on Solana. Routex402 adds the trust layer before payment is released.</p>
+               <span class="compat-tag">Agent marketplace</span>
+             </a>
+             <a class="card compat-card" href="https://sendai.fun" target="_blank" rel="noopener">
+-              <div class="compat-icon">📡</div>
++              <div class="compat-icon" style="background:#7c3aed;color:#fff">S</div>
+               <h3 class="h4">SendAI</h3>
+               <p class="muted">Open-source toolkit connecting AI agents to 30+ Solana protocols. Agents check Routex402 scores before paying for services.</p>
+               <span class="compat-tag">Agent toolkit</span>
+             </a>
+             <a class="card compat-card" href="https://swarms.ai" target="_blank" rel="noopener">
+-              <div class="compat-icon">🐝</div>
++              <div class="compat-icon" style="background:#ea580c;color:#fff">S</div>
+               <h3 class="h4">Swarms</h3>
+               <p class="muted">Multi-agent collaboration platform. Each agent in a swarm checks reputation before delegating paid tasks to the next.</p>
+               <span class="compat-tag">Multi-agent</span>
+             </a>
+             <a class="card compat-card" href="https://solana.com/agent-registry" target="_blank" rel="noopener">
+-              <div class="compat-icon">📋</div>
++              <div class="compat-icon" style="background:#0f172a;color:#fff">R</div>
+               <h3 class="h4">Solana Agent Registry</h3>
+               <p class="muted">Official Solana agent directory. The registry tells you an agent exists — Routex402 tells you if it's worth paying.</p>
+               <span class="compat-tag">Registry</span>
+             </a>
+             <a class="card compat-card" href="https://madeonsol.com/tools/pay-sh" target="_blank" rel="noopener">
+-              <div class="compat-icon">💳</div>
++              <div class="compat-icon" style="background:#15803d;color:#fff">P</div>
+               <h3 class="h4">Pay.sh</h3>
+               <p class="muted">Stablecoin payment gateway for AI agent APIs. Routex402 sits on top as the reputation layer before any payment flows.</p>
+               <span class="compat-tag">Payments</span>
+             </a>
+             <a class="card compat-card" href="https://madeonsol.com/tools/solana-agent-kit" target="_blank" rel="noopener">
+-              <div class="compat-icon">🧰</div>
++              <div class="compat-icon" style="background:#4338ca;color:#fff">K</div>
+               <h3 class="h4">Solana Agent Kit</h3>
+               <p class="muted">50+ pre-built actions for DeFi, NFTs, and token management. Add reputation checks with one import.</p>
+               <span class="compat-tag">SDK</span>
