@@ -132,7 +132,7 @@
 
   /* ---------- rendering: home ---------- */
   function renderAll() {
-    renderStats(); renderHighway(); renderTable(); renderActivity();
+    renderStats(); renderHighway(); renderTable(); renderActivity(); renderAgentRep();
     if (state.current) renderDetail();
   }
 
@@ -338,6 +338,53 @@
         evText(e),
         who && B58.test(who) ? " (" + shortKey(who) + ")" : ""),
       h("span", { "class": "when" }, t ? timeAgo(Math.floor(t)) + " " : "", s ? ext(solscanTx(s), "View on Solscan") : ""));
+  }
+
+  /* ---------- rendering: agent reputation tracker ---------- */
+  function renderAgentRep() {
+    var grid = $("#agent-rep-grid");
+    if (!grid) return;
+    // Aggregate feed events by agent name
+    var agentMap = {};
+    state.events.forEach(function (e) {
+      var name = e.agent;
+      if (!name) return;
+      if (!agentMap[name]) agentMap[name] = { name: name, total: 0, success: 0, tasks: {}, lastTime: 0 };
+      var a = agentMap[name];
+      var step = e.step || "";
+      if (step === "deliver_result") { a.total++; a.success++; }
+      else if (step === "receive_request") { /* count requests but don't count as success */ }
+      var task = e.task || "";
+      if (task) a.tasks[task] = true;
+      var t = evTime(e);
+      if (t > a.lastTime) a.lastTime = t;
+    });
+    var agents = Object.keys(agentMap).map(function (k) { return agentMap[k]; });
+    if (!agents.length) {
+      setChildren(grid, h("div", { "class": "agent-rep-empty muted" }, "Run the agent chain to see reputation stats here."));
+      return;
+    }
+    agents.sort(function (a, b) { return b.success - a.success || b.lastTime - a.lastTime; });
+    setChildren(grid, agents.map(function (a) {
+      var rate = a.total ? Math.round(a.success / a.total * 100) : 0;
+      var taskList = Object.keys(a.tasks);
+      return h("div", { "class": "agent-rep-card" },
+        h("div", { "class": "rep-header" },
+          h("span", { "class": "rep-name", text: a.name }),
+          h("span", { "class": "rep-badge", text: rate + "% success" })),
+        h("div", { "class": "rep-stats" },
+          h("div", { "class": "rep-stat" },
+            h("div", { "class": "rep-stat-val", text: String(a.success) }),
+            h("div", { "class": "rep-stat-lbl", text: "Delivered" })),
+          h("div", { "class": "rep-stat" },
+            h("div", { "class": "rep-stat-val", text: String(a.total) }),
+            h("div", { "class": "rep-stat-lbl", text: "Total" })),
+          h("div", { "class": "rep-stat" },
+            h("div", { "class": "rep-stat-val", text: rate + "%" }),
+            h("div", { "class": "rep-stat-lbl", text: "Score" }))),
+        taskList.length ? h("div", { "class": "rep-tasks" }, "Tasks: ", taskList.map(function (t) { return h("code", null, t); }).reduce(function (arr, el) { return arr.length ? arr.concat(", ", el) : [el]; }, [])) : "",
+        a.lastTime ? h("div", { "class": "rep-last", text: "Last active: " + timeAgo(Math.floor(a.lastTime)) }) : "");
+    }));
   }
 
   /* ---------- rendering: agent detail ---------- */

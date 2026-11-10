@@ -79,6 +79,31 @@
         </div>
       </section>
 
+      <section class="section alt" aria-labelledby="act-title">
+        <div class="wrap">
+          <h2 id="act-title">Live protocol feed</h2>
+          <p class="muted sec-sub">Real-time x402 flow: every request, payment, verification and delivery logged as it happens. Each step links to Solscan.</p>
+          <div class="feed-legend">
+            <span class="feed-tag tag-request">Request</span>
+            <span class="feed-tag tag-402">402</span>
+            <span class="feed-tag tag-verify">Verify</span>
+            <span class="feed-tag tag-deliver">Deliver</span>
+            <span class="feed-tag tag-rep">Reputation</span>
+          </div>
+          <ul class="act feed" id="activity" aria-live="polite"></ul>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="agent-rep-title">
+        <div class="wrap">
+          <h2 id="agent-rep-title">Agent reputation tracker</h2>
+          <p class="muted sec-sub">Per-agent stats from the live feed. Each agent's purchases, success rate, and last activity — all backed by on-chain transactions.</p>
+          <div class="agent-rep-grid" id="agent-rep-grid">
+            <div class="agent-rep-empty muted">Run the agent chain to see reputation stats here.</div>
+          </div>
+        </div>
+      </section>
+
       <section class="section" aria-labelledby="hw-title">
         <div class="wrap">
           <div class="sec-head">
