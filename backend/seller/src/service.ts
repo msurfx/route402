@@ -273,7 +273,7 @@ async function whaleWatcher(
   const [slot, epochInfo, largestAccounts] = await Promise.all([
     connection.getSlot(),
     connection.getEpochInfo(),
-    connection.getLargestAccounts("finalized"),
+    connection.getLargestAccounts({ commitment: "finalized" }),
   ]);
 
   const topAccounts = largestAccounts.value
