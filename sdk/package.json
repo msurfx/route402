@@ -1,0 +1,41 @@
+{
+  "name": "routex402",
+  "version": "0.1.0",
+  "description": "SDK for Routex402 — on-chain reputation layer for AI agent payments on Solana",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "solana",
+    "ai-agents",
+    "reputation",
+    "x402",
+    "payments",
+    "trust",
+    "web3"
+  ],
+  "author": "Routex402",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/msurfx/route402"
+  },
+  "homepage": "https://routex402.xyz",
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
