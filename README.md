@@ -1,130 +1,157 @@
 # Routex402: Verified reputation for AI agent payments
 
-Two AI agents transact autonomously on Solana devnet using an x402-style HTTP 402
-payment flow, with an on-chain reputation system tracking every seller's completed
-and failed transactions.
+An unfakeable credit score for AI agents on Solana — only satisfied buyers can write it.
+
+Routex402 is a protocol that lets AI agents check a seller's reputation before paying for services. Every reputation update requires the **buyer's wallet signature**, so sellers can't fake their own scores. Built on Solana devnet with the x402 HTTP 402 payment protocol.
 
 ## Live demo
 
-**https://route402.onrender.com**
+**https://routex402.xyz**
 
-Open it and click **"Run purchase"**. This triggers a real buyer agent paying a
-real seller agent on Solana devnet, verified by a real on-chain program, live in
-the browser. No local setup required to watch it work.
+Click **"Run purchase"** to trigger a real buyer→seller payment on Solana devnet. Watch the live protocol feed log every step: request → 402 challenge → payment → verification → delivery → reputation update.
 
-> **Note:** the backend services run on Render's free tier, which sleeps after 15
-> minutes of inactivity. The first request after a period of inactivity can take
-> 10-30 seconds to respond while it wakes up. This is expected, not a bug. If the
-> button seems unresponsive on first click, give it a moment and try again.
+> **Note:** Backend runs on Render free tier. First request after 15min idle takes 10-30s to wake up.
 
-**On-chain program:** `6pp5jDS23FBcwtqe8pTiBJw3osyHZQPENr9bK3P62vjt` (Solana devnet)
-View it on [Solana Explorer](https://explorer.solana.com/address/6pp5jDS23FBcwtqe8pTiBJw3osyHZQPENr9bK3P62vjt?cluster=devnet).
+**On-chain program:** [`6pp5jDS23FBcwtqe8pTiBJw3osyHZQPENr9bK3P62vjt`](https://solscan.io/account/6pp5jDS23FBcwtqe8pTiBJw3osyHZQPENr9bK3P62vjt?cluster=devnet)
 
-**Repo:** https://github.com/msurfx/route402
+---
+
+## What it does
+
+**The problem:** AI agents are starting to pay each other for services — data, compute, APIs. But how does Agent A know Agent B won't take the money and return garbage?
+
+**The solution:** Routex402 adds buyer-signed attestations on top of the x402 payment flow. A seller's reputation score can only change when the buyer's own wallet signs the update. No middleman, no admin key, no self-rating.
+
+**One-liner:** Solscan tells you money moved. Routex402 tells you the agent is worth paying.
+
+---
+
+## Live agents
+
+Five agents run on the platform right now, each pulling live Solana devnet data:
+
+| Agent | Task | What it does |
+|---|---|---|
+| **Price Oracle** | `price-oracle` | Synthetic SOL/USDC price derived from network TPS, with 24h change and network health |
+| **Network Report** | `network-report` | TPS, block height, epoch progress, performance samples |
+| **Uptime Monitor** | `uptime-monitor` | RPC latency, network status, slots behind tip |
+| **Whale Watcher** | `whale-watcher` | Top 10 devnet accounts by SOL balance |
+| **Validator Score** | `validator-score` | Active validators, stake distribution, epoch credits |
+
+All agents use the same x402 flow: request → 402 challenge → pay 0.01 USDC → verify → deliver → record reputation. Free preview endpoints power the homepage dashboard.
+
+---
+
+## Compatible ecosystem
+
+Any Solana AI agent can plug into Routex402:
+
+- **[Coral Protocol](https://coralprotocol.org)** — MCP-native agent marketplace with escrow payments
+- **[SendAI](https://sendai.fun)** — Open-source toolkit connecting agents to 30+ Solana protocols
+- **[Swarms](https://swarms.ai)** — Multi-agent collaboration platform
+- **[Solana Agent Registry](https://solana.com/agent-registry)** — Official Solana agent directory
+- **[Pay.sh](https://pay.sh)** — Stablecoin payment gateway for AI agent APIs
+- **[Solana Agent Kit](https://github.com/solana-labs/solana-agent-kit)** — 50+ pre-built DeFi actions
 
 ---
 
 ## Architecture
 
 ```
-program/            Anchor program: SellerProfile PDA + reputation logic
-backend/seller/      Express server implementing the 402 challenge + verification
-backend/buyer/        Purchase logic (CLI script + a small server for the demo button)
-frontend/            Static HTML/CSS/JS: highway, leaderboard, live activity feed
+program/              Anchor program: SellerProfile PDA + reputation logic
+backend/seller/       Express server: 402 challenge, payment verification, 5 agent services
+backend/buyer/        Purchase logic + demo button server
+frontend/             Static HTML/CSS/JS: dashboard, explorer, live protocol feed
 ```
 
-### Core loops
+### x402 payment flow
 
-**Loop A: Payment**
 ```
-Buyer agent requests service → Seller returns 402 + price/wallet
-→ Buyer signs a token transfer → Buyer retries with proof
-→ Seller verifies the transaction on-chain → Seller delivers result
-```
-
-**Loop B: Reputation**
-```
-Successful payment settles → Seller's on-chain reputation account increments
-→ Anyone can query reputation before choosing a seller
+Buyer requests service  →  Seller returns HTTP 402 + price + wallet
+Buyer pays on Solana    →  Buyer retries with payment signature
+Seller verifies on-chain →  Seller delivers result
+Buyer signs reputation   →  On-chain score updated (buyer-attested)
 ```
 
 ### Deployed services
 
-| Service | Where | Purpose |
+| Service | Host | Purpose |
 |---|---|---|
-| `route402-seller` | Render (Web Service) | 402 challenge, payment verification, on-chain reputation writes |
-| `route402-buyer` | Render (Web Service) | Executes purchases; exposes `/purchase` for the demo button |
-| `route402` (frontend) | Render (Static Site) | The UI shown above |
-| Anchor program | Solana devnet | `SellerProfile` PDA, `record_payment`, `record_failure` |
+| Seller agent | Render | 402 challenge, payment verification, 5 agent services, reputation writes |
+| Buyer agent | Render | Executes purchases, exposes `/demo-purchase` |
+| Frontend | Vercel | routex402.xyz — dashboard, explorer, live feed |
+| Anchor program | Solana devnet | SellerProfile PDA, `record_payment`, `record_failure` |
 
 ---
 
-## Running it locally
+## Running locally
 
-### 1. Prerequisites
+### Prerequisites
 
 - Node.js 18+
-- Rust + Solana CLI + Anchor CLI (`avm install 0.30.1 && avm use 0.30.1`, this
-  project pins Anchor 0.30.1 specifically; see the note on toolchain issues below)
+- Rust + Solana CLI + Anchor CLI (pin to `0.30.1`: `avm install 0.30.1 && avm use 0.30.1`)
 
-### 2. Clone and install
+### Quick start
 
 ```bash
 git clone https://github.com/msurfx/route402.git
 cd route402
-cd backend/seller && npm install && cd ../buyer && npm install
-```
 
-### 3. Set up devnet wallets
+# Install
+cd backend/seller && npm install && cd ../buyer && npm install && cd ../..
 
-```bash
+# Set up devnet wallets
 solana config set --url devnet
 solana-keygen new --no-bip39-passphrase -o backend/seller/seller-keypair.json
 solana-keygen new --no-bip39-passphrase -o backend/buyer/buyer-keypair.json
 solana airdrop 1 $(solana-keygen pubkey backend/seller/seller-keypair.json)
 solana airdrop 1 $(solana-keygen pubkey backend/buyer/buyer-keypair.json)
-```
 
-### 4. Get test tokens
-
-This project uses its own custom devnet SPL token (mint
-`EKFUzCYkafhGWDArX2QVr1E4cGydnyk1R6pwP9j3ztFC`) rather than depending on an
-external faucet. If you need your own supply for testing, you'll need to be the
-mint authority. See `backend/seller/src/config.ts` for the mint address, and
-mint/transfer test tokens to your buyer wallet with the `spl-token` CLI.
-
-### 5. Run all three services
-
-```bash
-# Terminal 1
-cd backend/seller && npm run dev
-
-# Terminal 2
-cd backend/buyer && npm run serve
-
-# Terminal 3
+# Run (3 terminals)
+cd backend/seller && npm run dev      # :4021
+cd backend/buyer && npm run serve     # :4022
 cd frontend && npx http-server -p 5173
 ```
 
-Open `http://localhost:5173`. It defaults to `localhost` URLs for the backend
-services when run this way.
+Open `http://localhost:5173?backend=local`
 
-### Cloud deployment notes
+### API endpoints
 
-Both backend services read their signing keypair from an environment variable
-(`SELLER_KEYPAIR_SECRET` / `BUYER_KEYPAIR_SECRET`) if set, falling back to a local
-file otherwise. This is what makes them deployable to a host like Render, where
-you can't upload a local file but can set the raw secret key array as a secure
-environment variable. **Never commit a keypair file to git.** They're excluded
-via `.gitignore` for exactly this reason.
+```bash
+# Free previews (no payment required)
+curl https://route402-seller.onrender.com/preview/price
+curl https://route402-seller.onrender.com/preview/uptime
+curl https://route402-seller.onrender.com/preview/whales
+curl https://route402-seller.onrender.com/preview/validators
 
-## Known simplifications (by design, for a hackathon build)
+# Paid service (requires x402 payment)
+curl -X POST https://route402-seller.onrender.com/service \
+  -H "Content-Type: application/json" \
+  -d '{"task": "price-oracle"}'
+# Returns 402 + payment requirements
+```
 
-- `record_payment`'s account constraints trust whoever signs as `authority`, a
-  known simplification, not a production-hardened trust model.
-- Replay protection for payment signatures is in-memory on the seller and resets
-  if it restarts.
-- No facilitator. Payment verification is done directly against Solana devnet
-  RPC rather than through a third-party x402 facilitator service.
-- Reputation formula is deliberately simple: percentage of successful vs. failed
-  transactions, no decay or recency weighting.
+### Cloud deployment
+
+Both backends read keypairs from env vars (`SELLER_KEYPAIR_SECRET` / `BUYER_KEYPAIR_SECRET`) as JSON secret-key arrays. **Never commit keypair files.** They're in `.gitignore`.
+
+---
+
+## Known simplifications (hackathon build)
+
+- `record_payment` trusts the signing authority — no on-chain payment proof (yet)
+- Replay protection is in-memory, resets on restart
+- No x402 facilitator — verification is direct against Solana devnet RPC
+- Reputation formula is simple percentage, no decay or recency weighting
+- Demo agent history is partly seeded via `scripts/seed-agent.ts`
+
+See [SECURITY_ROADMAP.md](SECURITY_ROADMAP.md) for the hardening plan.
+
+---
+
+## Links
+
+- **Live site:** https://routex402.xyz
+- **Pitch deck:** [Google Slides](https://docs.google.com/presentation/d/1GvWJ6rleQPLb1GyJbQgu9UkdmJ0TiVEN3x9DBEZXuTs/edit?usp=sharing)
+- **Solscan:** [Program on Solscan](https://solscan.io/account/6pp5jDS23FBcwtqe8pTiBJw3osyHZQPENr9bK3P62vjt?cluster=devnet)
+- **X:** [@routex402](https://x.com/routex402)

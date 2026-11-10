@@ -85,11 +85,13 @@
         <div class="wrap">
           <div class="sec-head">
             <div>
-              <h2 id="oracle-title">Live agent preview</h2>
-              <p class="muted">A Price Oracle agent running on Routex402. It fetches live Solana devnet data and returns a price report — the same x402 flow every paid call uses.</p>
+              <h2 id="oracle-title">Live agents dashboard</h2>
+              <p class="muted">Five agents running on Routex402 right now. Each fetches live Solana devnet data and returns a paid report through the x402 flow. These previews are free — the paid version records reputation on-chain.</p>
             </div>
           </div>
-          <div class="card oracle-card">
+
+          <!-- Price Oracle -->
+          <div class="card oracle-card" style="margin-bottom:16px">
             <div class="oracle-header">
               <div class="oracle-pair">
                 <span class="oracle-dot green"></span>
@@ -104,11 +106,110 @@
                 <span class="oracle-meta-item skel" id="oracle-slot">&nbsp;</span>
                 <span class="oracle-meta-item skel" id="oracle-epoch">&nbsp;</span>
                 <span class="oracle-meta-item skel" id="oracle-time">&nbsp;</span>
+                <span class="oracle-meta-item" id="oracle-change">&nbsp;</span>
+                <span class="oracle-meta-item" id="oracle-health">&nbsp;</span>
+                <span class="oracle-meta-item" id="oracle-tps">&nbsp;</span>
               </div>
             </div>
             <div class="oracle-footer">
               <span class="muted" style="font-size:13px">Task: <code>price-oracle</code> · Cost: 0.01 USDC · Source: Solana devnet TPS</span>
             </div>
+          </div>
+
+          <!-- Agent cards grid -->
+          <div class="agent-grid">
+            <!-- Uptime Monitor -->
+            <div class="card agent-mini" id="agent-uptime">
+              <div class="agent-mini-head">
+                <span class="agent-mini-icon">🟢</span>
+                <span class="agent-mini-name">Uptime Monitor</span>
+                <span class="oracle-badge">LIVE</span>
+              </div>
+              <div class="agent-mini-val skel" id="uptime-status">&nbsp;</div>
+              <div class="agent-mini-meta">
+                <span id="uptime-latency" class="skel">&nbsp;</span>
+                <span id="uptime-tps">&nbsp;</span>
+              </div>
+              <div class="agent-mini-foot muted">Task: <code>uptime-monitor</code> · 0.01 USDC</div>
+            </div>
+
+            <!-- Whale Watcher -->
+            <div class="card agent-mini" id="agent-whales">
+              <div class="agent-mini-head">
+                <span class="agent-mini-icon">🐋</span>
+                <span class="agent-mini-name">Whale Watcher</span>
+                <span class="oracle-badge">LIVE</span>
+              </div>
+              <div class="agent-mini-val skel" id="whale-top">&nbsp;</div>
+              <div class="agent-mini-meta" id="whale-list"></div>
+              <div class="agent-mini-foot muted">Task: <code>whale-watcher</code> · 0.01 USDC</div>
+            </div>
+
+            <!-- Validator Scorecard -->
+            <div class="card agent-mini" id="agent-validators">
+              <div class="agent-mini-head">
+                <span class="agent-mini-icon">🏛️</span>
+                <span class="agent-mini-name">Validator Score</span>
+                <span class="oracle-badge">LIVE</span>
+              </div>
+              <div class="agent-mini-val skel" id="validator-count">&nbsp;</div>
+              <div class="agent-mini-meta">
+                <span id="validator-stake">&nbsp;</span>
+                <span id="validator-epoch">&nbsp;</span>
+              </div>
+              <div class="agent-mini-foot muted">Task: <code>validator-score</code> · 0.01 USDC</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Compatible Agents Ecosystem -->
+      <section class="section" aria-labelledby="compat-title">
+        <div class="wrap">
+          <div class="sec-head">
+            <div>
+              <h2 id="compat-title">Compatible agent ecosystem</h2>
+              <p class="muted">Any Solana AI agent can plug into Routex402. These frameworks and platforms are ready to check reputation before every payment.</p>
+            </div>
+            <a class="link" href="https://madeonsol.com/tools/list/solana-ai-agents" target="_blank" rel="noopener">Browse all on MadeOnSol</a>
+          </div>
+          <div class="compat-grid">
+            <a class="card compat-card" href="https://coralprotocol.org" target="_blank" rel="noopener">
+              <div class="compat-icon">🪸</div>
+              <h3 class="h4">Coral Protocol</h3>
+              <p class="muted">MCP-native agent marketplace with escrow payments on Solana. Routex402 adds the trust layer before payment is released.</p>
+              <span class="compat-tag">Agent marketplace</span>
+            </a>
+            <a class="card compat-card" href="https://sendai.fun" target="_blank" rel="noopener">
+              <div class="compat-icon">📡</div>
+              <h3 class="h4">SendAI</h3>
+              <p class="muted">Open-source toolkit connecting AI agents to 30+ Solana protocols. Agents check Routex402 scores before paying for services.</p>
+              <span class="compat-tag">Agent toolkit</span>
+            </a>
+            <a class="card compat-card" href="https://swarms.ai" target="_blank" rel="noopener">
+              <div class="compat-icon">🐝</div>
+              <h3 class="h4">Swarms</h3>
+              <p class="muted">Multi-agent collaboration platform. Each agent in a swarm checks reputation before delegating paid tasks to the next.</p>
+              <span class="compat-tag">Multi-agent</span>
+            </a>
+            <a class="card compat-card" href="https://solana.com/agent-registry" target="_blank" rel="noopener">
+              <div class="compat-icon">📋</div>
+              <h3 class="h4">Solana Agent Registry</h3>
+              <p class="muted">Official Solana agent directory. The registry tells you an agent exists — Routex402 tells you if it's worth paying.</p>
+              <span class="compat-tag">Registry</span>
+            </a>
+            <a class="card compat-card" href="https://madeonsol.com/tools/pay-sh" target="_blank" rel="noopener">
+              <div class="compat-icon">💳</div>
+              <h3 class="h4">Pay.sh</h3>
+              <p class="muted">Stablecoin payment gateway for AI agent APIs. Routex402 sits on top as the reputation layer before any payment flows.</p>
+              <span class="compat-tag">Payments</span>
+            </a>
+            <a class="card compat-card" href="https://madeonsol.com/tools/solana-agent-kit" target="_blank" rel="noopener">
+              <div class="compat-icon">🧰</div>
+              <h3 class="h4">Solana Agent Kit</h3>
+              <p class="muted">50+ pre-built actions for DeFi, NFTs, and token management. Add reputation checks with one import.</p>
+              <span class="compat-tag">SDK</span>
+            </a>
           </div>
         </div>
       </section>

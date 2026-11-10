@@ -473,15 +473,19 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })();
 
-/* ---------- price oracle widget ---------- */
+/* ---------- live agents dashboard ---------- */
 (function () {
   var SELLER_URL = window.SELLER_URL || "http://localhost:4021";
+
+  /* --- Price Oracle (enhanced) --- */
   var priceEl = document.getElementById("oracle-price");
   var slotEl = document.getElementById("oracle-slot");
   var epochEl = document.getElementById("oracle-epoch");
   var timeEl = document.getElementById("oracle-time");
+  var changeEl = document.getElementById("oracle-change");
+  var healthEl = document.getElementById("oracle-health");
+  var tpsEl = document.getElementById("oracle-tps");
   var refreshBtn = document.getElementById("oracle-refresh");
-  if (!priceEl) return;
 
   function fetchPrice() {
     if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.textContent = "..."; }
@@ -493,25 +497,95 @@
           priceEl.classList.remove("skel");
           if (slotEl) { slotEl.textContent = "Slot " + d.data.slot; slotEl.classList.remove("skel"); }
           if (epochEl) { epochEl.textContent = "Epoch " + d.data.epoch; epochEl.classList.remove("skel"); }
-          if (timeEl) {
-            var t = new Date(d.data.generatedAt);
-            timeEl.textContent = t.toLocaleTimeString();
-            timeEl.classList.remove("skel");
+          if (timeEl) { timeEl.textContent = new Date(d.data.generatedAt).toLocaleTimeString(); timeEl.classList.remove("skel"); }
+          if (changeEl) {
+            var c = d.data.change24h || 0;
+            changeEl.textContent = (c >= 0 ? "+" : "") + c.toFixed(2) + "%";
+            changeEl.className = "oracle-meta-item oracle-change " + (c >= 0 ? "up" : "down");
+          }
+          if (healthEl) {
+            var h = d.data.networkHealth || "healthy";
+            healthEl.textContent = h.toUpperCase();
+            healthEl.className = "oracle-meta-item oracle-health " + h;
+          }
+          if (tpsEl) { tpsEl.textContent = (d.data.avgTps || 0) + " TPS"; tpsEl.className = "oracle-meta-item"; }
+        }
+      })
+      .catch(function () { if (priceEl) { priceEl.textContent = "—"; priceEl.classList.remove("skel"); } })
+      .then(function () { if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = "Refresh"; } });
+  }
+  if (priceEl) { fetchPrice(); setInterval(fetchPrice, 15000); }
+  if (refreshBtn) refreshBtn.addEventListener("click", fetchPrice);
+
+  /* --- Uptime Monitor --- */
+  var uptimeStatus = document.getElementById("uptime-status");
+  var uptimeLatency = document.getElementById("uptime-latency");
+  var uptimeTps = document.getElementById("uptime-tps");
+
+  function fetchUptime() {
+    fetch(SELLER_URL + "/preview/uptime")
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.data) {
+          var s = d.data.status;
+          var icon = s === "operational" ? "✅" : s === "degraded" ? "⚠️" : "❌";
+          uptimeStatus.textContent = icon + " " + s.charAt(0).toUpperCase() + s.slice(1);
+          uptimeStatus.classList.remove("skel");
+          if (uptimeLatency) { uptimeLatency.textContent = d.data.rpcLatencyMs + "ms latency"; uptimeLatency.classList.remove("skel"); }
+          if (uptimeTps) { uptimeTps.textContent = d.data.avgTps + " TPS"; }
+        }
+      })
+      .catch(function () { if (uptimeStatus) { uptimeStatus.textContent = "—"; uptimeStatus.classList.remove("skel"); } });
+  }
+  if (uptimeStatus) { fetchUptime(); setInterval(fetchUptime, 20000); }
+
+  /* --- Whale Watcher --- */
+  var whaleTop = document.getElementById("whale-top");
+  var whaleList = document.getElementById("whale-list");
+
+  function fetchWhales() {
+    fetch(SELLER_URL + "/preview/whales")
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.data && d.data.topAccounts) {
+          var accts = d.data.topAccounts;
+          var totalSol = accts.reduce(function (s, a) { return s + a.balanceSol; }, 0);
+          whaleTop.textContent = totalSol.toLocaleString() + " SOL";
+          whaleTop.classList.remove("skel");
+          if (whaleList) {
+            whaleList.innerHTML = "";
+            accts.slice(0, 5).forEach(function (a) {
+              var row = document.createElement("div");
+              row.className = "whale-row";
+              row.innerHTML = '<span class="whale-addr">#' + a.rank + ' ' + a.address.slice(0, 4) + '...' + a.address.slice(-4) + '</span><span class="whale-bal">' + a.balanceSol.toLocaleString() + ' SOL</span>';
+              whaleList.appendChild(row);
+            });
           }
         }
       })
-      .catch(function () {
-        priceEl.textContent = "—";
-        priceEl.classList.remove("skel");
-      })
-      .then(function () {
-        if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = "Refresh"; }
-      });
+      .catch(function () { if (whaleTop) { whaleTop.textContent = "—"; whaleTop.classList.remove("skel"); } });
   }
+  if (whaleTop) { fetchWhales(); setInterval(fetchWhales, 30000); }
 
-  fetchPrice();
-  setInterval(fetchPrice, 15000);
-  if (refreshBtn) refreshBtn.addEventListener("click", fetchPrice);
+  /* --- Validator Scorecard --- */
+  var validatorCount = document.getElementById("validator-count");
+  var validatorStake = document.getElementById("validator-stake");
+  var validatorEpoch = document.getElementById("validator-epoch");
+
+  function fetchValidators() {
+    fetch(SELLER_URL + "/preview/validators")
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.data) {
+          validatorCount.textContent = d.data.activeValidators + " / " + d.data.totalValidators + " active";
+          validatorCount.classList.remove("skel");
+          if (validatorStake) { validatorStake.textContent = d.data.networkStakeSol.toLocaleString() + " SOL staked"; }
+          if (validatorEpoch) { validatorEpoch.textContent = "Epoch " + d.data.epoch; }
+        }
+      })
+      .catch(function () { if (validatorCount) { validatorCount.textContent = "—"; validatorCount.classList.remove("skel"); } });
+  }
+  if (validatorCount) { fetchValidators(); setInterval(fetchValidators, 30000); }
 })();
 
 /* dark mode toggle */

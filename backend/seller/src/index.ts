@@ -147,9 +147,25 @@ app.post("/service", serviceLimiter, async (req, res) => {
     return res.status(500).json({ error: "service execution failed" });
   }
 
-  const deliverMsg = task === "price-oracle"
-    ? `Delivered "${task}" (${output.data.pair} $${output.data.price}, slot ${output.data.slot}) — buyer will record reputation on-chain`
-    : `Delivered "${task}" (slot ${output.data.slot}, avg ${output.data.avgTps} TPS) — buyer will record reputation on-chain`;
+  // Build a human-readable deliver message per task type
+  let deliverMsg: string;
+  switch (task) {
+    case "price-oracle":
+      deliverMsg = `Delivered "${task}" (${output.data.pair} $${output.data.price}, slot ${output.data.slot})`;
+      break;
+    case "uptime-monitor":
+      deliverMsg = `Delivered "${task}" (${output.data.status}, ${output.data.rpcLatencyMs}ms latency, slot ${output.data.slot})`;
+      break;
+    case "whale-watcher":
+      deliverMsg = `Delivered "${task}" (top ${output.data.topAccounts?.length || 0} accounts, slot ${output.data.slot})`;
+      break;
+    case "validator-score":
+      deliverMsg = `Delivered "${task}" (${output.data.activeValidators}/${output.data.totalValidators} active, slot ${output.data.slot})`;
+      break;
+    default:
+      deliverMsg = `Delivered "${task}" (slot ${output.data.slot}, avg ${output.data.avgTps} TPS)`;
+  }
+  deliverMsg += " — buyer will record reputation on-chain";
   logEvent("deliver_result", deliverMsg, paymentSignature);
 
   return res.status(200).json({
@@ -162,8 +178,9 @@ app.post("/service", serviceLimiter, async (req, res) => {
   });
 });
 
-// Free preview — lets the homepage show a live price ticker without paying.
+// Free previews — lets the homepage show live agent data without paying.
 const previewLimiter = rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
+
 app.get("/preview/price", previewLimiter, async (_req, res) => {
   try {
     const output = await performService(connection, "price-oracle", {});
@@ -171,6 +188,36 @@ app.get("/preview/price", previewLimiter, async (_req, res) => {
   } catch (err) {
     console.error("price preview failed:", err);
     res.status(500).json({ error: "price preview unavailable" });
+  }
+});
+
+app.get("/preview/uptime", previewLimiter, async (_req, res) => {
+  try {
+    const output = await performService(connection, "uptime-monitor", {});
+    res.json({ task: "uptime-monitor", result: output.summary, data: output.data, preview: true });
+  } catch (err) {
+    console.error("uptime preview failed:", err);
+    res.status(500).json({ error: "uptime preview unavailable" });
+  }
+});
+
+app.get("/preview/whales", previewLimiter, async (_req, res) => {
+  try {
+    const output = await performService(connection, "whale-watcher", {});
+    res.json({ task: "whale-watcher", result: output.summary, data: output.data, preview: true });
+  } catch (err) {
+    console.error("whale preview failed:", err);
+    res.status(500).json({ error: "whale preview unavailable" });
+  }
+});
+
+app.get("/preview/validators", previewLimiter, async (_req, res) => {
+  try {
+    const output = await performService(connection, "validator-score", {});
+    res.json({ task: "validator-score", result: output.summary, data: output.data, preview: true });
+  } catch (err) {
+    console.error("validator preview failed:", err);
+    res.status(500).json({ error: "validator preview unavailable" });
   }
 });
 
