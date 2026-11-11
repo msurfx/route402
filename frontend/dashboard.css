@@ -183,6 +183,10 @@ input[type=search],select{width:100%;font:inherit;padding:10px 12px;border:1px s
 .tag-verify{background:#dbeafe;color:#1d4ed8}
 .tag-deliver{background:#dcfce7;color:#15803d}
 .tag-rep{background:#fce7f3;color:#be185d}
+.tag-quality-pass{background:#dcfce7;color:#15803d}
+.tag-quality-warn{background:#fef3c7;color:#92400e}
+.tag-quality-fail{background:#fee2e2;color:#b91c1c}
+.tag-latency{background:#e0e7ff;color:#4338ca;font-variant-numeric:tabular-nums}
 .feed .step-tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border-radius:5px;margin-right:6px;white-space:nowrap}
 .feed .agent-tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:5px;margin-right:6px;white-space:nowrap;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
 .feed li.has-agent{border-left-color:#15803d;background:rgba(21,128,61,.03)}

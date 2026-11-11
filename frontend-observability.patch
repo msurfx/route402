@@ -1,0 +1,338 @@
+diff --git a/frontend/app.js b/frontend/app.js
+index ab3de12..181c5c3 100644
+--- a/frontend/app.js
++++ b/frontend/app.js
+@@ -12,7 +12,7 @@
+   var BUYER_URL = LOCAL ? "http://localhost:4022" : (window.BUYER_SERVER_URL || "http://localhost:4022");
+ 
+   var state = {
+-    agents: [], events: [], loaded: false, failed: false,
++    agents: [], events: [], attestations: [], loaded: false, failed: false,
+     sortKey: "reputationScore", sortDir: "desc", tier: "all", conf: "all", q: "", page: 1,
+     seen: null, current: null
+   };
+@@ -101,8 +101,8 @@
+   /* ---------- polling ---------- */
+   function poll() {
+     if (document.hidden && state.loaded) { return schedule(); }
+-    Promise.all([fetchJson(SELLER_URL, "/agents"), fetchJson(SELLER_URL, "/events")]).then(function (rs) {
+-      var ag = rs[0], ev = rs[1];
++    Promise.all([fetchJson(SELLER_URL, "/agents"), fetchJson(SELLER_URL, "/events"), fetchJson(SELLER_URL, "/attestations")]).then(function (rs) {
++      var ag = rs[0], ev = rs[1], att = rs[2];
+       if (ag.ok && Array.isArray(ag.body)) {
+         var prev = {};
+         state.agents.forEach(function (x) { prev[x.pubkey] = x.completedCount; });
+@@ -116,6 +116,9 @@
+         detectNew(list);
+         state.events = list;
+       }
++      if (att.ok && Array.isArray(att.body)) {
++        state.attestations = att.body;
++      }
+       $("#status-banner").hidden = !state.failed;
+       renderAll();
+     }).then(schedule, schedule);
+@@ -132,7 +135,7 @@
+ 
+   /* ---------- rendering: home ---------- */
+   function renderAll() {
+-    renderStats(); renderHighway(); renderTable(); renderActivity(); renderAgentRep();
++    renderStats(); renderHighway(); renderTable(); renderActivity(); renderAgentRep(); renderAttestationFeed();
+     if (state.current) renderDetail();
+   }
+ 
+@@ -141,8 +144,9 @@
+     if (!state.loaded) return;
+     var pay = a.reduce(function (s, x) { return s + x.completedCount; }, 0);
+     var vol = a.reduce(function (s, x) { return s + x.totalVolume; }, 0);
+-    var avg = a.length ? Math.round(a.reduce(function (s, x) { return s + x.reputationScore; }, 0) / a.length) : 0;
+-    vals = { agents: String(a.length), payments: pay.toLocaleString("en-US"), volume: usdc(vol), avg: a.length ? String(avg) : "n/a" };
++    var attArr = state.attestations || [];
++    var avgQuality = attArr.length ? Math.round(attArr.reduce(function (s, x) { return s + (x.qualityScore || 0); }, 0) / attArr.length) : null;
++    vals = { agents: String(a.length), payments: pay.toLocaleString("en-US"), volume: usdc(vol), quality: avgQuality !== null ? avgQuality + "/100" : "n/a" };
+     Object.keys(vals).forEach(function (k) {
+       var el = $('[data-stat="' + k + '"]');
+       if (el) { el.textContent = vals[k]; el.classList.remove("skel"); }
+@@ -387,6 +391,46 @@
+     }));
+   }
+ 
++  /* ---------- rendering: attestation quality feed ---------- */
++  function renderAttestationFeed() {
++    var ul = $("#attestation-feed");
++    if (!ul) return;
++    var atts = state.attestations || [];
++    if (!atts.length) {
++      setChildren(ul, h("li", null, h("span", { "class": "muted", text: "No attestations yet. Run a purchase to see buyer quality reports here." })));
++      return;
++    }
++    var sig = atts.slice(0, 12).map(function (a) { return a.paymentSignature || ""; }).join("|");
++    if (ul.dataset.sig === sig) return;
++    ul.dataset.sig = sig;
++    setChildren(ul, atts.slice(0, 12).map(function (a) {
++      var score = a.qualityScore || 0;
++      var checks = a.checks || [];
++      var passed = checks.filter(function (c) { return c.pass; }).length;
++      var total = checks.length;
++      var tagCls = score >= 100 ? "tag-quality-pass" : score >= 50 ? "tag-quality-warn" : "tag-quality-fail";
++      var tagLabel = score >= 100 ? "PASS" : score >= 50 ? "DEGRADED" : "FAIL";
++      var latency = a.latencyMs || 0;
++      var pSig = a.paymentSignature || "";
++
++      return h("li", { "data-step": "attestation" },
++        h("span", null,
++          h("span", { "class": "step-tag " + tagCls, text: tagLabel }),
++          h("span", { "class": "step-tag tag-latency", text: latency + "ms" }),
++          h("strong", { text: score + "/100" }),
++          " — ",
++          h("code", { text: a.task || "unknown" }),
++          " — ",
++          passed + "/" + total + " checks passed",
++          checks.filter(function (c) { return !c.pass; }).length > 0
++            ? " (" + checks.filter(function (c) { return !c.pass; }).map(function (c) { return c.label; }).join(", ") + " failed)"
++            : ""),
++        h("span", { "class": "when" },
++          a.timestamp ? timeAgo(Math.floor(new Date(a.timestamp).getTime() / 1000)) + " " : "",
++          pSig && SIG.test(pSig) ? ext(solscanTx(pSig), "View tx") : ""));
++    }));
++  }
++
+   /* ---------- rendering: agent detail ---------- */
+   function reasonFor(a) {
+     var c = a.completedCount, b = a.distinctBuyers;
+@@ -526,7 +570,7 @@
+     $("#nav").classList.remove("open"); $("#nav-toggle").setAttribute("aria-expanded", "false");
+     if (m) { state.current = m[1]; $("#agent-root").dataset.sig = ""; renderDetail(); window.scrollTo(0, 0); }
+     else {
+-      state.current = null; document.title = "Routex402: Verified reputation for AI agent payments";
++      state.current = null; document.title = "Routex402: Cross-protocol observability for AI agent payments";
+       var target = (hash === "#how" || hash === "#explorer") ? document.getElementById(hash.slice(1)) : null;
+       if (target) target.scrollIntoView(); else window.scrollTo(0, 0);
+     }
+diff --git a/frontend/dashboard.css b/frontend/dashboard.css
+index ebb68c6..fc6f5c1 100644
+--- a/frontend/dashboard.css
++++ b/frontend/dashboard.css
+@@ -183,6 +183,10 @@ input[type=search],select{width:100%;font:inherit;padding:10px 12px;border:1px s
+ .tag-verify{background:#dbeafe;color:#1d4ed8}
+ .tag-deliver{background:#dcfce7;color:#15803d}
+ .tag-rep{background:#fce7f3;color:#be185d}
++.tag-quality-pass{background:#dcfce7;color:#15803d}
++.tag-quality-warn{background:#fef3c7;color:#92400e}
++.tag-quality-fail{background:#fee2e2;color:#b91c1c}
++.tag-latency{background:#e0e7ff;color:#4338ca;font-variant-numeric:tabular-nums}
+ .feed .step-tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border-radius:5px;margin-right:6px;white-space:nowrap}
+ .feed .agent-tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:5px;margin-right:6px;white-space:nowrap;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
+ .feed li.has-agent{border-left-color:#15803d;background:rgba(21,128,61,.03)}
+diff --git a/frontend/index.html b/frontend/index.html
+index caf8c6c..b63c169 100644
+--- a/frontend/index.html
++++ b/frontend/index.html
+@@ -3,8 +3,8 @@
+ <head>
+   <meta charset="utf-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1">
+-  <title>Routex402: Verified reputation for AI agent payments</title>
+-  <meta name="description" content="Verified reputation for AI agent payments on Solana. A seller's score only moves when the buyer's own wallet signs it.">
++  <title>Routex402: Cross-protocol observability for AI agent payments</title>
++  <meta name="description" content="Monitor AI agent payments across every protocol on Solana. Quality checks, latency tracking, and alerts when performance drops.">
+   <link rel="icon" href="favicon.ico" sizes="any">
+   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+   <link rel="apple-touch-icon" href="apple-touch-icon.png">
+@@ -44,20 +44,20 @@
+       <section class="hero">
+         <div class="wrap">
+           <p class="eyebrow">Solana devnet</p>
+-          <h1>Verified reputation for AI agent payments</h1>
+-          <p class="lede">A seller's score only moves when the buyer's own wallet signs the update. Browse agents, inspect the evidence behind each score, and check it on-chain.</p>
++          <h1>Observability layer for AI agent payments</h1>
++          <p class="lede">The chain shows payments happened. It can't tell you if the service was any good. Routex402 monitors agent payments across protocols — quality checks, latency tracking, and alerts when performance drops.</p>
+ 
+           <div class="stats" id="stats" aria-label="Live statistics">
+-            <div class="stat"><span class="stat-v skel" data-stat="agents">&nbsp;</span><span class="stat-l">Agents</span></div>
+-            <div class="stat"><span class="stat-v skel" data-stat="payments">&nbsp;</span><span class="stat-l">Completed payments</span></div>
+-            <div class="stat"><span class="stat-v skel" data-stat="volume">&nbsp;</span><span class="stat-l">Total volume (USDC)</span></div>
+-            <div class="stat"><span class="stat-v skel" data-stat="avg">&nbsp;</span><span class="stat-l">Average reputation</span></div>
++            <div class="stat"><span class="stat-v skel" data-stat="agents">&nbsp;</span><span class="stat-l">Agents monitored</span></div>
++            <div class="stat"><span class="stat-v skel" data-stat="payments">&nbsp;</span><span class="stat-l">Transactions tracked</span></div>
++            <div class="stat"><span class="stat-v skel" data-stat="volume">&nbsp;</span><span class="stat-l">Volume (USDC)</span></div>
++            <div class="stat"><span class="stat-v skel" data-stat="quality">&nbsp;</span><span class="stat-l">Avg quality score</span></div>
+           </div>
+ 
+           <div class="card demo">
+             <div>
+-              <h2 class="h3">Run a live demo payment</h2>
+-              <p class="muted">Triggers a real buyer→seller payment on Solana devnet, then records the buyer-signed reputation update.</p>
++              <h2 class="h3">Run a live payment + attestation</h2>
++              <p class="muted">Triggers a real buyer→seller payment on devnet. After delivery, the buyer agent auto-evaluates response quality and submits an attestation — watch it in the quality feed below.</p>
+               <p id="purchase-result" class="demo-msg" role="status" aria-live="polite"></p>
+             </div>
+             <div class="demo-actions">
+@@ -69,7 +69,7 @@
+           <div class="card demo chain-demo">
+             <div>
+               <h2 class="h3">🔗 Run agent chain</h2>
+-              <p class="muted">Three external agents — <strong>Coral Protocol</strong>, <strong>SendAI</strong>, <strong>Swarms</strong> — each make a real x402 purchase in sequence. Watch them appear in the live feed below.</p>
++              <p class="muted">Three agents — <strong>Coral Protocol</strong>, <strong>SendAI</strong>, <strong>Swarms</strong> — each purchase in sequence. Each auto-attests quality after delivery. Watch the monitoring feed fill up.</p>
+               <p id="chain-result" class="demo-msg" role="status" aria-live="polite"></p>
+             </div>
+             <div class="demo-actions">
+@@ -79,28 +79,42 @@
+         </div>
+       </section>
+ 
+-      <section class="section alt" aria-labelledby="act-title">
++      <section class="section alt" aria-labelledby="quality-title">
+         <div class="wrap">
+-          <h2 id="act-title">Live protocol feed</h2>
+-          <p class="muted sec-sub">Real-time x402 flow: every request, payment, verification and delivery logged as it happens. Each step links to Solscan.</p>
++          <h2 id="quality-title">Quality attestation feed</h2>
++          <p class="muted sec-sub">After every payment, the buyer agent automatically evaluates the response: did the seller respond, was the data valid, plausible, and fresh? This is the data the chain alone doesn't have.</p>
+           <div class="feed-legend">
+-            <span class="feed-tag tag-request">Request</span>
+-            <span class="feed-tag tag-402">402</span>
+-            <span class="feed-tag tag-verify">Verify</span>
+-            <span class="feed-tag tag-deliver">Deliver</span>
+-            <span class="feed-tag tag-rep">Reputation</span>
++            <span class="feed-tag tag-quality-pass">Quality pass</span>
++            <span class="feed-tag tag-quality-warn">Degraded</span>
++            <span class="feed-tag tag-quality-fail">Failed</span>
++            <span class="feed-tag tag-latency">Latency</span>
+           </div>
+-          <ul class="act feed" id="activity" aria-live="polite"></ul>
++          <ul class="act feed" id="attestation-feed" aria-live="polite"></ul>
+         </div>
+       </section>
+ 
+       <section class="section" aria-labelledby="agent-rep-title">
+         <div class="wrap">
+-          <h2 id="agent-rep-title">Agent reputation tracker</h2>
+-          <p class="muted sec-sub">Per-agent stats from the live feed. Each agent's purchases, success rate, and last activity — all backed by on-chain transactions.</p>
++          <h2 id="agent-rep-title">Agent performance monitor</h2>
++          <p class="muted sec-sub">Per-agent quality scores, response times, and check pass rates — aggregated from buyer attestations. The monitoring view no single protocol dashboard gives you.</p>
+           <div class="agent-rep-grid" id="agent-rep-grid">
+-            <div class="agent-rep-empty muted">Run the agent chain to see reputation stats here.</div>
++            <div class="agent-rep-empty muted">Run the agent chain to see performance monitoring here.</div>
++          </div>
++        </div>
++      </section>
++
++      <section class="section alt" aria-labelledby="act-title">
++        <div class="wrap">
++          <h2 id="act-title">Transaction feed</h2>
++          <p class="muted sec-sub">Raw x402 payment flow: requests, 402 challenges, verifications, and deliveries. Each step links to Solscan.</p>
++          <div class="feed-legend">
++            <span class="feed-tag tag-request">Request</span>
++            <span class="feed-tag tag-402">402</span>
++            <span class="feed-tag tag-verify">Verify</span>
++            <span class="feed-tag tag-deliver">Deliver</span>
++            <span class="feed-tag tag-rep">Reputation</span>
+           </div>
++          <ul class="act feed" id="activity" aria-live="polite"></ul>
+         </div>
+       </section>
+ 
+@@ -108,8 +122,8 @@
+         <div class="wrap">
+           <div class="sec-head">
+             <div>
+-              <h2 id="hw-title">Top agents</h2>
+-              <p class="muted">Ranked by reputation. The bar shows completed payments in green and failed in red. A row flashes when a payment lands.</p>
++              <h2 id="hw-title">Monitored agents</h2>
++              <p class="muted">Ranked by quality score. The bar shows completed vs failed payments. A row flashes when a new attestation lands.</p>
+             </div>
+             <a class="link" href="#explorer">View all agents</a>
+           </div>
+@@ -121,8 +135,8 @@
+         <div class="wrap">
+           <div class="sec-head">
+             <div>
+-              <h2 id="oracle-title">Live agents dashboard</h2>
+-              <p class="muted">Five agents running on Routex402 right now. Each fetches live Solana devnet data and returns a paid report through the x402 flow. These previews are free — the paid version records reputation on-chain.</p>
++              <h2 id="oracle-title">Live service previews</h2>
++              <p class="muted">The agents Routex402 monitors. Each returns live Solana devnet data through the x402 payment flow. Every response is auto-attested for quality.</p>
+             </div>
+           </div>
+ 
+@@ -204,8 +218,8 @@
+         <div class="wrap">
+           <div class="sec-head">
+             <div>
+-              <h2 id="compat-title">Compatible agent ecosystem</h2>
+-              <p class="muted">Any Solana AI agent can plug into Routex402. These frameworks and platforms are ready to check reputation before every payment.</p>
++              <h2 id="compat-title">Protocols we monitor</h2>
++              <p class="muted">Routex402 sits across protocols — monitoring agent quality wherever payments happen. One dashboard, every protocol.</p>
+             </div>
+             <a class="link" href="https://madeonsol.com/tools/list/solana-ai-agents" target="_blank" rel="noopener">Browse all on MadeOnSol</a>
+           </div>
+@@ -213,37 +227,37 @@
+             <a class="card compat-card" href="https://coralprotocol.org" target="_blank" rel="noopener">
+               <div class="compat-icon" style="background:#0e7490;color:#fff">C</div>
+               <h3 class="h4">Coral Protocol</h3>
+-              <p class="muted">MCP-native agent marketplace with escrow payments on Solana. Routex402 adds the trust layer before payment is released.</p>
++              <p class="muted">MCP-native agent marketplace with escrow payments on Solana. Routex402 monitors every purchase for quality degradation.</p>
+               <span class="compat-tag">Agent marketplace</span>
+             </a>
+             <a class="card compat-card" href="https://sendai.fun" target="_blank" rel="noopener">
+               <div class="compat-icon" style="background:#7c3aed;color:#fff">S</div>
+               <h3 class="h4">SendAI</h3>
+-              <p class="muted">Open-source toolkit connecting AI agents to 30+ Solana protocols. Agents check Routex402 scores before paying for services.</p>
++              <p class="muted">Open-source toolkit connecting AI agents to 30+ Solana protocols. Routex402 tracks quality across every SendAI transaction.</p>
+               <span class="compat-tag">Agent toolkit</span>
+             </a>
+             <a class="card compat-card" href="https://swarms.ai" target="_blank" rel="noopener">
+               <div class="compat-icon" style="background:#ea580c;color:#fff">S</div>
+               <h3 class="h4">Swarms</h3>
+-              <p class="muted">Multi-agent collaboration platform. Each agent in a swarm checks reputation before delegating paid tasks to the next.</p>
++              <p class="muted">Multi-agent collaboration platform. Routex402 monitors quality at every handoff in a swarm chain.</p>
+               <span class="compat-tag">Multi-agent</span>
+             </a>
+             <a class="card compat-card" href="https://solana.com/agent-registry" target="_blank" rel="noopener">
+               <div class="compat-icon" style="background:#0f172a;color:#fff">R</div>
+               <h3 class="h4">Solana Agent Registry</h3>
+-              <p class="muted">Official Solana agent directory. The registry tells you an agent exists — Routex402 tells you if it's worth paying.</p>
++              <p class="muted">Official Solana agent directory. The registry says who exists — Routex402 says how they're performing.</p>
+               <span class="compat-tag">Registry</span>
+             </a>
+             <a class="card compat-card" href="https://madeonsol.com/tools/pay-sh" target="_blank" rel="noopener">
+               <div class="compat-icon" style="background:#15803d;color:#fff">P</div>
+               <h3 class="h4">Pay.sh</h3>
+-              <p class="muted">Stablecoin payment gateway for AI agent APIs. Routex402 sits on top as the reputation layer before any payment flows.</p>
++              <p class="muted">Stablecoin payment gateway for AI agent APIs. Routex402 monitors service quality on every payment that flows through.</p>
+               <span class="compat-tag">Payments</span>
+             </a>
+             <a class="card compat-card" href="https://madeonsol.com/tools/solana-agent-kit" target="_blank" rel="noopener">
+               <div class="compat-icon" style="background:#4338ca;color:#fff">K</div>
+               <h3 class="h4">Solana Agent Kit</h3>
+-              <p class="muted">50+ pre-built actions for DeFi, NFTs, and token management. Add reputation checks with one import.</p>
++              <p class="muted">50+ pre-built actions for DeFi, NFTs, and token management. Add quality monitoring with one SDK import.</p>
+               <span class="compat-tag">SDK</span>
+             </a>
+           </div>
+@@ -253,17 +267,17 @@
+ 
+       <section class="section alt" id="how" aria-labelledby="how-title">
+         <div class="wrap">
+-          <h2 id="how-title">How vetting works</h2>
+-          <p class="muted sec-sub">Every agent page runs automated checks on public on-chain evidence. Each check returns Pass, Caution, Fail or Unknown, and shows the numbers behind it.</p>
++          <h2 id="how-title">How monitoring works</h2>
++          <p class="muted sec-sub">After every payment, the buyer agent runs 4 automated quality checks on the response. This produces data that on-chain records alone can't provide.</p>
+           <div class="grid">
+-            <div class="card"><h3 class="h4">Track record</h3><p class="muted">How many payments the agent has completed. Fewer than 5 means there is not enough history to rate.</p></div>
+-            <div class="card"><h3 class="h4">Success rate</h3><p class="muted">Completed payments against recorded failures. Pass at 95% or more.</p></div>
+-            <div class="card"><h3 class="h4">Buyer independence</h3><p class="muted">How many different buyers paid the agent. Many payments from one buyer is a warning sign.</p></div>
+-            <div class="card"><h3 class="h4">Volume consistency</h3><p class="muted">Whether total volume matches price times payments, allowing 5% for protocol fees.</p></div>
+-            <div class="card"><h3 class="h4">Recent activity</h3><p class="muted">How long since the agent's last recorded payment. Stale agents are flagged.</p></div>
+-            <div class="card"><h3 class="h4">Buyer-signed updates</h3><p class="muted">Built into the program: a score cannot change without the buyer's own signature. <a href="docs.html">Read the security model</a>.</p></div>
++            <div class="card"><h3 class="h4">Response check</h3><p class="muted">Did the seller actually respond with data? A payment with no delivery gets flagged immediately.</p></div>
++            <div class="card"><h3 class="h4">Format validation</h3><p class="muted">Does the response contain the expected fields for the task type? Missing fields = broken service.</p></div>
++            <div class="card"><h3 class="h4">Data plausibility</h3><p class="muted">Are values in sane ranges? A price oracle returning $0 or a validator count of -1 gets caught.</p></div>
++            <div class="card"><h3 class="h4">Freshness check</h3><p class="muted">Was the data generated recently? Stale responses from cached or dead services are flagged.</p></div>
++            <div class="card"><h3 class="h4">Latency tracking</h3><p class="muted">Response time measured per request. Tracked but not scored against the seller — network delays aren't their fault.</p></div>
++            <div class="card"><h3 class="h4">Cross-protocol view</h3><p class="muted">Attestations aggregate across protocols. If a seller degrades on one, buyers on another know about it.</p></div>
+           </div>
+-          <p class="note"><strong>Limits.</strong> One person who controls both the buyer and the seller wallet can still inflate a score. The buyer independence check flags this pattern but cannot rule it out. Scores are informational, not a guarantee. This is a devnet demonstration.</p>
++          <p class="note"><strong>Why this matters.</strong> On-chain data tells you payments happened. It can't tell you if the data was fresh, the format was valid, or the service was actually working. That's what buyer attestations provide — the quality signal that no amount of Solscan scraping gives you.</p>
+         </div>
+       </section>
+ 

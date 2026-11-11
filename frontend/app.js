@@ -12,7 +12,7 @@
   var BUYER_URL = LOCAL ? "http://localhost:4022" : (window.BUYER_SERVER_URL || "http://localhost:4022");
 
   var state = {
-    agents: [], events: [], loaded: false, failed: false,
+    agents: [], events: [], attestations: [], loaded: false, failed: false,
     sortKey: "reputationScore", sortDir: "desc", tier: "all", conf: "all", q: "", page: 1,
     seen: null, current: null
   };
@@ -101,8 +101,8 @@
   /* ---------- polling ---------- */
   function poll() {
     if (document.hidden && state.loaded) { return schedule(); }
-    Promise.all([fetchJson(SELLER_URL, "/agents"), fetchJson(SELLER_URL, "/events")]).then(function (rs) {
-      var ag = rs[0], ev = rs[1];
+    Promise.all([fetchJson(SELLER_URL, "/agents"), fetchJson(SELLER_URL, "/events"), fetchJson(SELLER_URL, "/attestations")]).then(function (rs) {
+      var ag = rs[0], ev = rs[1], att = rs[2];
       if (ag.ok && Array.isArray(ag.body)) {
         var prev = {};
         state.agents.forEach(function (x) { prev[x.pubkey] = x.completedCount; });
@@ -115,6 +115,9 @@
         if (list.some(function (e) { return evTime(e) > 0; })) list.sort(function (a, b) { return evTime(b) - evTime(a); });
         detectNew(list);
         state.events = list;
+      }
+      if (att.ok && Array.isArray(att.body)) {
+        state.attestations = att.body;
       }
       $("#status-banner").hidden = !state.failed;
       renderAll();
@@ -132,7 +135,7 @@
 
   /* ---------- rendering: home ---------- */
   function renderAll() {
-    renderStats(); renderHighway(); renderTable(); renderActivity(); renderAgentRep();
+    renderStats(); renderHighway(); renderTable(); renderActivity(); renderAgentRep(); renderAttestationFeed();
     if (state.current) renderDetail();
   }
 
@@ -141,8 +144,9 @@
     if (!state.loaded) return;
     var pay = a.reduce(function (s, x) { return s + x.completedCount; }, 0);
     var vol = a.reduce(function (s, x) { return s + x.totalVolume; }, 0);
-    var avg = a.length ? Math.round(a.reduce(function (s, x) { return s + x.reputationScore; }, 0) / a.length) : 0;
-    vals = { agents: String(a.length), payments: pay.toLocaleString("en-US"), volume: usdc(vol), avg: a.length ? String(avg) : "n/a" };
+    var attArr = state.attestations || [];
+    var avgQuality = attArr.length ? Math.round(attArr.reduce(function (s, x) { return s + (x.qualityScore || 0); }, 0) / attArr.length) : null;
+    vals = { agents: String(a.length), payments: pay.toLocaleString("en-US"), volume: usdc(vol), quality: avgQuality !== null ? avgQuality + "/100" : "n/a" };
     Object.keys(vals).forEach(function (k) {
       var el = $('[data-stat="' + k + '"]');
       if (el) { el.textContent = vals[k]; el.classList.remove("skel"); }
@@ -387,6 +391,46 @@
     }));
   }
 
+  /* ---------- rendering: attestation quality feed ---------- */
+  function renderAttestationFeed() {
+    var ul = $("#attestation-feed");
+    if (!ul) return;
+    var atts = state.attestations || [];
+    if (!atts.length) {
+      setChildren(ul, h("li", null, h("span", { "class": "muted", text: "No attestations yet. Run a purchase to see buyer quality reports here." })));
+      return;
+    }
+    var sig = atts.slice(0, 12).map(function (a) { return a.paymentSignature || ""; }).join("|");
+    if (ul.dataset.sig === sig) return;
+    ul.dataset.sig = sig;
+    setChildren(ul, atts.slice(0, 12).map(function (a) {
+      var score = a.qualityScore || 0;
+      var checks = a.checks || [];
+      var passed = checks.filter(function (c) { return c.pass; }).length;
+      var total = checks.length;
+      var tagCls = score >= 100 ? "tag-quality-pass" : score >= 50 ? "tag-quality-warn" : "tag-quality-fail";
+      var tagLabel = score >= 100 ? "PASS" : score >= 50 ? "DEGRADED" : "FAIL";
+      var latency = a.latencyMs || 0;
+      var pSig = a.paymentSignature || "";
+
+      return h("li", { "data-step": "attestation" },
+        h("span", null,
+          h("span", { "class": "step-tag " + tagCls, text: tagLabel }),
+          h("span", { "class": "step-tag tag-latency", text: latency + "ms" }),
+          h("strong", { text: score + "/100" }),
+          " — ",
+          h("code", { text: a.task || "unknown" }),
+          " — ",
+          passed + "/" + total + " checks passed",
+          checks.filter(function (c) { return !c.pass; }).length > 0
+            ? " (" + checks.filter(function (c) { return !c.pass; }).map(function (c) { return c.label; }).join(", ") + " failed)"
+            : ""),
+        h("span", { "class": "when" },
+          a.timestamp ? timeAgo(Math.floor(new Date(a.timestamp).getTime() / 1000)) + " " : "",
+          pSig && SIG.test(pSig) ? ext(solscanTx(pSig), "View tx") : ""));
+    }));
+  }
+
   /* ---------- rendering: agent detail ---------- */
   function reasonFor(a) {
     var c = a.completedCount, b = a.distinctBuyers;
@@ -526,7 +570,7 @@
     $("#nav").classList.remove("open"); $("#nav-toggle").setAttribute("aria-expanded", "false");
     if (m) { state.current = m[1]; $("#agent-root").dataset.sig = ""; renderDetail(); window.scrollTo(0, 0); }
     else {
-      state.current = null; document.title = "Routex402: Verified reputation for AI agent payments";
+      state.current = null; document.title = "Routex402: Cross-protocol observability for AI agent payments";
       var target = (hash === "#how" || hash === "#explorer") ? document.getElementById(hash.slice(1)) : null;
       if (target) target.scrollIntoView(); else window.scrollTo(0, 0);
     }
