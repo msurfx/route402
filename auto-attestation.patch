@@ -1,0 +1,404 @@
+diff --git a/backend/buyer/src/purchase.ts b/backend/buyer/src/purchase.ts
+index 2dd907b..5af5d36 100644
+--- a/backend/buyer/src/purchase.ts
++++ b/backend/buyer/src/purchase.ts
+@@ -15,6 +15,7 @@ import {
+   getOrCreateAssociatedTokenAccount,
+ } from "@solana/spl-token";
+ import idl from "./idl/agent_economy.json" with { type: "json" };
++import { validateResponse, type AttestationResult } from "./validate.js";
+ 
+ const RPC_URL = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
+ const SELLER_URL = process.env.SELLER_URL ?? "http://localhost:4021";
+@@ -42,6 +43,8 @@ export interface PurchaseResult {
+   reputationTxSignature?: string;
+   /** Fee taken by the protocol, in base units — surfaced for transparency. */
+   protocolFee?: number;
++  /** Buyer-side quality attestation — auto-generated after each purchase. */
++  attestation?: AttestationResult;
+ }
+ 
+ /**
+@@ -156,6 +159,7 @@ export async function runPurchase(
+     };
+   }
+ 
++  const requestStart = Date.now();
+   const secondResponse = await fetch(`${SELLER_URL}/service`, {
+     method: "POST",
+     headers: { "Content-Type": "application/json" },
+@@ -163,11 +167,25 @@ export async function runPurchase(
+   });
+ 
+   const body = await secondResponse.json();
++  const latencyMs = Date.now() - requestStart;
+ 
+   if (secondResponse.status !== 200) {
+-    return { success: false, message: `Purchase failed (${secondResponse.status})`, signature };
++    // Still attest — seller failed to deliver after payment
++    const attestation = validateResponse(task, null, latencyMs);
++    await submitAttestation(attestation, signature, sellerAuthority.toBase58()).catch(err => {
++      console.error("attestation submit failed:", err);
++    });
++    return { success: false, message: `Purchase failed (${secondResponse.status})`, signature, attestation };
+   }
+ 
++  // Auto-attest: evaluate what we got
++  const attestation = validateResponse(task, body, latencyMs);
++
++  // Submit attestation to seller (non-blocking — don't let it break the purchase flow)
++  await submitAttestation(attestation, signature, sellerAuthority.toBase58()).catch(err => {
++    console.error("attestation submit failed:", err);
++  });
++
+   return {
+     success: true,
+     message: "Purchase complete — payment and reputation settled atomically",
+@@ -175,5 +193,28 @@ export async function runPurchase(
+     result: body.result,
+     reputationTxSignature: signature,
+     protocolFee,
++    attestation,
+   };
+ }
++
++// ---- Attestation submission ----
++
++async function submitAttestation(
++  attestation: AttestationResult,
++  paymentSignature: string,
++  sellerAddress: string,
++): Promise<void> {
++  const res = await fetch(`${SELLER_URL}/attest`, {
++    method: "POST",
++    headers: { "Content-Type": "application/json" },
++    body: JSON.stringify({
++      paymentSignature,
++      sellerAddress,
++      ...attestation,
++    }),
++  });
++  if (!res.ok) {
++    const err = await res.text().catch(() => "unknown");
++    throw new Error(`Attest endpoint returned ${res.status}: ${err}`);
++  }
++}
+diff --git a/backend/buyer/src/validate.ts b/backend/buyer/src/validate.ts
+new file mode 100644
+index 0000000..a72d33d
+--- /dev/null
++++ b/backend/buyer/src/validate.ts
+@@ -0,0 +1,193 @@
++/**
++ * Auto-attestation: buyer agent evaluates service quality after each purchase.
++ *
++ * Checks what the SELLER controls:
++ *   1. Did they respond at all?
++ *   2. Valid format (JSON with expected fields)?
++ *   3. Plausible data (values in sane ranges)?
++ *   4. Fresh data (generatedAt within last 5 minutes)?
++ *
++ * Latency is tracked but NOT scored against the seller — network/chain delays
++ * aren't their fault.
++ */
++
++export interface AttestationCheck {
++  id: string;
++  label: string;
++  pass: boolean;
++  detail: string;
++}
++
++export interface AttestationResult {
++  qualityScore: number;        // 0-100
++  checks: AttestationCheck[];
++  latencyMs: number;           // tracked, not scored
++  task: string;
++  timestamp: string;
++}
++
++// ---- Per-task validators ----
++
++interface TaskData {
++  [key: string]: any;
++}
++
++function checkResponded(body: any): AttestationCheck {
++  const hasData = body && typeof body === "object" && body.data;
++  return {
++    id: "responded",
++    label: "Seller responded",
++    pass: !!hasData,
++    detail: hasData ? "Received response with data payload" : "No data in response",
++  };
++}
++
++function checkFormat(task: string, data: TaskData): AttestationCheck {
++  const requiredFields: Record<string, string[]> = {
++    "price-oracle":    ["pair", "price", "slot", "generatedAt"],
++    "network-report":  ["cluster", "slot", "blockHeight", "avgTps", "generatedAt"],
++    "uptime-monitor":  ["cluster", "slot", "rpcLatencyMs", "status", "generatedAt"],
++    "whale-watcher":   ["cluster", "slot", "topAccounts", "generatedAt"],
++    "validator-score": ["cluster", "slot", "totalValidators", "activeValidators", "generatedAt"],
++  };
++
++  const fields = requiredFields[task] ?? ["generatedAt"];
++  const missing = fields.filter(f => data[f] === undefined && data[f] !== 0);
++
++  return {
++    id: "format",
++    label: "Valid format",
++    pass: missing.length === 0,
++    detail: missing.length === 0
++      ? `All ${fields.length} expected fields present`
++      : `Missing fields: ${missing.join(", ")}`,
++  };
++}
++
++function checkPlausible(task: string, data: TaskData): AttestationCheck {
++  switch (task) {
++    case "price-oracle": {
++      const price = Number(data.price);
++      // SOL price — should be between $1 and $10,000 (generous range)
++      const ok = price > 0 && price < 10_000;
++      return {
++        id: "plausible",
++        label: "Plausible data",
++        pass: ok,
++        detail: ok ? `Price $${price} within sane range` : `Price $${price} looks implausible`,
++      };
++    }
++    case "network-report": {
++      const tps = Number(data.avgTps);
++      const ok = tps > 0 && tps < 200_000;
++      return {
++        id: "plausible",
++        label: "Plausible data",
++        pass: ok,
++        detail: ok ? `TPS ${tps} within expected range` : `TPS ${tps} looks wrong`,
++      };
++    }
++    case "uptime-monitor": {
++      const latency = Number(data.rpcLatencyMs);
++      const ok = latency > 0 && latency < 30_000;
++      return {
++        id: "plausible",
++        label: "Plausible data",
++        pass: ok,
++        detail: ok ? `RPC latency ${latency}ms reasonable` : `RPC latency ${latency}ms implausible`,
++      };
++    }
++    case "whale-watcher": {
++      const accounts = data.topAccounts;
++      const ok = Array.isArray(accounts) && accounts.length > 0;
++      return {
++        id: "plausible",
++        label: "Plausible data",
++        pass: ok,
++        detail: ok ? `${accounts.length} whale accounts returned` : "No whale accounts in response",
++      };
++    }
++    case "validator-score": {
++      const total = Number(data.totalValidators);
++      const active = Number(data.activeValidators);
++      const ok = total > 0 && active > 0 && active <= total;
++      return {
++        id: "plausible",
++        label: "Plausible data",
++        pass: ok,
++        detail: ok
++          ? `${active}/${total} validators — makes sense`
++          : `Validator counts look wrong (${active}/${total})`,
++      };
++    }
++    default:
++      return { id: "plausible", label: "Plausible data", pass: true, detail: "No task-specific validation" };
++  }
++}
++
++function checkFreshness(data: TaskData): AttestationCheck {
++  const gen = data.generatedAt;
++  if (!gen) {
++    return { id: "fresh", label: "Fresh data", pass: false, detail: "No generatedAt timestamp" };
++  }
++  const genTime = new Date(gen).getTime();
++  const now = Date.now();
++  const ageMs = now - genTime;
++  const ageSec = Math.round(ageMs / 1000);
++  // Allow up to 5 minutes — generous for network delays
++  const ok = ageMs >= 0 && ageMs < 300_000;
++  return {
++    id: "fresh",
++    label: "Fresh data",
++    pass: ok,
++    detail: ok ? `Generated ${ageSec}s ago` : `Data is ${ageSec}s old — stale`,
++  };
++}
++
++// ---- Main validator ----
++
++export function validateResponse(
++  task: string,
++  body: any,
++  latencyMs: number,
++): AttestationResult {
++  const checks: AttestationCheck[] = [];
++
++  // Check 1: did the seller respond with data?
++  const respondedCheck = checkResponded(body);
++  checks.push(respondedCheck);
++
++  if (!respondedCheck.pass || !body?.data) {
++    // Can't check further if there's no data
++    return {
++      qualityScore: 0,
++      checks,
++      latencyMs,
++      task,
++      timestamp: new Date().toISOString(),
++    };
++  }
++
++  const data = body.data;
++
++  // Check 2: valid format
++  checks.push(checkFormat(task, data));
++
++  // Check 3: plausible data
++  checks.push(checkPlausible(task, data));
++
++  // Check 4: fresh data
++  checks.push(checkFreshness(data));
++
++  // Score: each check is worth 25 points
++  const passed = checks.filter(c => c.pass).length;
++  const qualityScore = Math.round((passed / checks.length) * 100);
++
++  return {
++    qualityScore,
++    checks,
++    latencyMs,
++    task,
++    timestamp: new Date().toISOString(),
++  };
++}
+diff --git a/backend/seller/src/index.ts b/backend/seller/src/index.ts
+index b22a552..4505583 100644
+--- a/backend/seller/src/index.ts
++++ b/backend/seller/src/index.ts
+@@ -235,6 +235,115 @@ app.get("/agents", async (_req, res) => {
+   }
+ });
+ 
++// Public reputation lookup — the core product endpoint
++// Returns on-chain reputation, tier, confidence, vetting checks and a pay/don't-pay recommendation
++app.get("/reputation/:address", async (req, res) => {
++  try {
++    const key = req.params.address;
++    // Validate it looks like a base58 pubkey
++    try { new PublicKey(key); } catch { return res.status(400).json({ error: "invalid Solana address" }); }
++
++    const profiles = await listSellerProfiles(sellerAuthority);
++    const agent = profiles.find((a: any) => a.pubkey === key || a.authority === key);
++    if (!agent) return res.status(404).json({ error: "agent not found", address: key });
++
++    const total = agent.completedCount + agent.failedCount;
++    const successRate = total > 0 ? Number(((agent.completedCount / total) * 100).toFixed(1)) : 0;
++    const ageDays = (Math.floor(Date.now() / 1000) - agent.lastUpdated) / 86400;
++
++    res.json({
++      address: key,
++      reputation: {
++        score: agent.reputationScore,
++        completedCount: agent.completedCount,
++        failedCount: agent.failedCount,
++        successRate,
++        totalVolume: agent.totalVolume,
++        distinctBuyers: agent.distinctBuyers,
++        lastUpdated: agent.lastUpdated,
++        lastUpdatedDaysAgo: Math.floor(ageDays),
++      },
++      tier: agent.completedCount >= 15 && agent.reputationScore >= 90 ? "Elite"
++          : agent.completedCount >= 5 && agent.reputationScore >= 70 ? "Trusted" : "New",
++      recommendation: agent.reputationScore >= 80 && successRate >= 80 ? "proceed" : "caution",
++      evidence: `https://solscan.io/account/${agent.pubkey}?cluster=devnet`,
++      api: `/api/v1/agents/${key}`,
++    });
++  } catch (err: any) {
++    res.status(500).json({ error: err?.message ?? String(err) });
++  }
++});
++
++// ---- Buyer attestations ----
++// Buyers submit quality evaluations after each purchase. Stored in-memory for
++// now; the roadmap has these going on-chain as a separate instruction.
++interface Attestation {
++  paymentSignature: string;
++  sellerAddress: string;
++  qualityScore: number;
++  checks: { id: string; label: string; pass: boolean; detail: string }[];
++  latencyMs: number;
++  task: string;
++  timestamp: string;
++  receivedAt: string;
++}
++const attestations: Attestation[] = [];
++
++app.post("/attest", express.json(), (req, res) => {
++  const { paymentSignature, sellerAddress, qualityScore, checks, latencyMs, task, timestamp } = req.body ?? {};
++
++  if (!paymentSignature || !sellerAddress || qualityScore === undefined) {
++    return res.status(400).json({ error: "missing required fields: paymentSignature, sellerAddress, qualityScore" });
++  }
++
++  // Dedupe — one attestation per payment
++  if (attestations.some(a => a.paymentSignature === paymentSignature)) {
++    return res.status(409).json({ error: "attestation already recorded for this payment" });
++  }
++
++  const attestation: Attestation = {
++    paymentSignature,
++    sellerAddress,
++    qualityScore: Number(qualityScore),
++    checks: Array.isArray(checks) ? checks : [],
++    latencyMs: Number(latencyMs) || 0,
++    task: String(task || "unknown"),
++    timestamp: timestamp || new Date().toISOString(),
++    receivedAt: new Date().toISOString(),
++  };
++
++  attestations.unshift(attestation);
++  if (attestations.length > 200) attestations.length = 200;
++
++  logEvent("buyer_attestation", `Quality ${attestation.qualityScore}/100 for "${attestation.task}" (${attestation.checks.filter(c => c.pass).length}/${attestation.checks.length} checks passed, ${attestation.latencyMs}ms)`, paymentSignature);
++
++  res.json({
++    accepted: true,
++    qualityScore: attestation.qualityScore,
++    message: "Attestation recorded — this is the data the chain alone doesn't have",
++  });
++});
++
++// Public: view attestations for a seller
++app.get("/attestations/:address", (req, res) => {
++  const addr = req.params.address;
++  const forSeller = attestations.filter(a => a.sellerAddress === addr);
++  const avgScore = forSeller.length > 0
++    ? Math.round(forSeller.reduce((s, a) => s + a.qualityScore, 0) / forSeller.length)
++    : null;
++  res.json({
++    address: addr,
++    count: forSeller.length,
++    averageQuality: avgScore,
++    attestations: forSeller.slice(0, 50),
++  });
++});
++
++// Public: all recent attestations (for the frontend feed)
++app.get("/attestations", (_req, res) => {
++  res.json(attestations.slice(0, 50));
++});
++
+ app.use("/api/v1", createApiV1Router({
+   connection,
+   programId: PROGRAM_ID,

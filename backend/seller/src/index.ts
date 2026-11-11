@@ -313,6 +313,115 @@ app.get("/reputation/:address", async (req, res) => {
   }
 });
 
+// Public reputation lookup — the core product endpoint
+// Returns on-chain reputation, tier, confidence, vetting checks and a pay/don't-pay recommendation
+app.get("/reputation/:address", async (req, res) => {
+  try {
+    const key = req.params.address;
+    // Validate it looks like a base58 pubkey
+    try { new PublicKey(key); } catch { return res.status(400).json({ error: "invalid Solana address" }); }
+
+    const profiles = await listSellerProfiles(sellerAuthority);
+    const agent = profiles.find((a: any) => a.pubkey === key || a.authority === key);
+    if (!agent) return res.status(404).json({ error: "agent not found", address: key });
+
+    const total = agent.completedCount + agent.failedCount;
+    const successRate = total > 0 ? Number(((agent.completedCount / total) * 100).toFixed(1)) : 0;
+    const ageDays = (Math.floor(Date.now() / 1000) - agent.lastUpdated) / 86400;
+
+    res.json({
+      address: key,
+      reputation: {
+        score: agent.reputationScore,
+        completedCount: agent.completedCount,
+        failedCount: agent.failedCount,
+        successRate,
+        totalVolume: agent.totalVolume,
+        distinctBuyers: agent.distinctBuyers,
+        lastUpdated: agent.lastUpdated,
+        lastUpdatedDaysAgo: Math.floor(ageDays),
+      },
+      tier: agent.completedCount >= 15 && agent.reputationScore >= 90 ? "Elite"
+          : agent.completedCount >= 5 && agent.reputationScore >= 70 ? "Trusted" : "New",
+      recommendation: agent.reputationScore >= 80 && successRate >= 80 ? "proceed" : "caution",
+      evidence: `https://solscan.io/account/${agent.pubkey}?cluster=devnet`,
+      api: `/api/v1/agents/${key}`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? String(err) });
+  }
+});
+
+// ---- Buyer attestations ----
+// Buyers submit quality evaluations after each purchase. Stored in-memory for
+// now; the roadmap has these going on-chain as a separate instruction.
+interface Attestation {
+  paymentSignature: string;
+  sellerAddress: string;
+  qualityScore: number;
+  checks: { id: string; label: string; pass: boolean; detail: string }[];
+  latencyMs: number;
+  task: string;
+  timestamp: string;
+  receivedAt: string;
+}
+const attestations: Attestation[] = [];
+
+app.post("/attest", express.json(), (req, res) => {
+  const { paymentSignature, sellerAddress, qualityScore, checks, latencyMs, task, timestamp } = req.body ?? {};
+
+  if (!paymentSignature || !sellerAddress || qualityScore === undefined) {
+    return res.status(400).json({ error: "missing required fields: paymentSignature, sellerAddress, qualityScore" });
+  }
+
+  // Dedupe — one attestation per payment
+  if (attestations.some(a => a.paymentSignature === paymentSignature)) {
+    return res.status(409).json({ error: "attestation already recorded for this payment" });
+  }
+
+  const attestation: Attestation = {
+    paymentSignature,
+    sellerAddress,
+    qualityScore: Number(qualityScore),
+    checks: Array.isArray(checks) ? checks : [],
+    latencyMs: Number(latencyMs) || 0,
+    task: String(task || "unknown"),
+    timestamp: timestamp || new Date().toISOString(),
+    receivedAt: new Date().toISOString(),
+  };
+
+  attestations.unshift(attestation);
+  if (attestations.length > 200) attestations.length = 200;
+
+  logEvent("buyer_attestation", `Quality ${attestation.qualityScore}/100 for "${attestation.task}" (${attestation.checks.filter(c => c.pass).length}/${attestation.checks.length} checks passed, ${attestation.latencyMs}ms)`, paymentSignature);
+
+  res.json({
+    accepted: true,
+    qualityScore: attestation.qualityScore,
+    message: "Attestation recorded — this is the data the chain alone doesn't have",
+  });
+});
+
+// Public: view attestations for a seller
+app.get("/attestations/:address", (req, res) => {
+  const addr = req.params.address;
+  const forSeller = attestations.filter(a => a.sellerAddress === addr);
+  const avgScore = forSeller.length > 0
+    ? Math.round(forSeller.reduce((s, a) => s + a.qualityScore, 0) / forSeller.length)
+    : null;
+  res.json({
+    address: addr,
+    count: forSeller.length,
+    averageQuality: avgScore,
+    attestations: forSeller.slice(0, 50),
+  });
+});
+
+// Public: all recent attestations (for the frontend feed)
+app.get("/attestations", (_req, res) => {
+  res.json(attestations.slice(0, 50));
+});
+
 app.use("/api/v1", createApiV1Router({
   connection,
   programId: PROGRAM_ID,

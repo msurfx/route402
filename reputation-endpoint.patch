@@ -1,0 +1,50 @@
+diff --git a/backend/seller/src/index.ts b/backend/seller/src/index.ts
+index b22a552..d244831 100644
+--- a/backend/seller/src/index.ts
++++ b/backend/seller/src/index.ts
+@@ -235,6 +235,45 @@ app.get("/agents", async (_req, res) => {
+   }
+ });
+ 
++// Public reputation lookup — the core product endpoint
++// Returns on-chain reputation, tier, confidence, vetting checks and a pay/don't-pay recommendation
++app.get("/reputation/:address", async (req, res) => {
++  try {
++    const key = req.params.address;
++    // Validate it looks like a base58 pubkey
++    try { new PublicKey(key); } catch { return res.status(400).json({ error: "invalid Solana address" }); }
++
++    const profiles = await listSellerProfiles(sellerAuthority);
++    const agent = profiles.find((a: any) => a.pubkey === key || a.authority === key);
++    if (!agent) return res.status(404).json({ error: "agent not found", address: key });
++
++    const total = agent.completedCount + agent.failedCount;
++    const successRate = total > 0 ? Number(((agent.completedCount / total) * 100).toFixed(1)) : 0;
++    const ageDays = (Math.floor(Date.now() / 1000) - agent.lastUpdated) / 86400;
++
++    res.json({
++      address: key,
++      reputation: {
++        score: agent.reputationScore,
++        completedCount: agent.completedCount,
++        failedCount: agent.failedCount,
++        successRate,
++        totalVolume: agent.totalVolume,
++        distinctBuyers: agent.distinctBuyers,
++        lastUpdated: agent.lastUpdated,
++        lastUpdatedDaysAgo: Math.floor(ageDays),
++      },
++      tier: agent.completedCount >= 15 && agent.reputationScore >= 90 ? "Elite"
++          : agent.completedCount >= 5 && agent.reputationScore >= 70 ? "Trusted" : "New",
++      recommendation: agent.reputationScore >= 80 && successRate >= 80 ? "proceed" : "caution",
++      evidence: `https://solscan.io/account/${agent.pubkey}?cluster=devnet`,
++      api: `/api/v1/agents/${key}`,
++    });
++  } catch (err: any) {
++    res.status(500).json({ error: err?.message ?? String(err) });
++  }
++});
++
+ app.use("/api/v1", createApiV1Router({
+   connection,
+   programId: PROGRAM_ID,

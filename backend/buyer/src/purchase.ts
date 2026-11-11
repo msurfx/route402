@@ -15,6 +15,7 @@ import {
   getOrCreateAssociatedTokenAccount,
 } from "@solana/spl-token";
 import idl from "./idl/agent_economy.json" with { type: "json" };
+import { validateResponse, type AttestationResult } from "./validate.js";
 
 const RPC_URL = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 const SELLER_URL = process.env.SELLER_URL ?? "http://localhost:4021";
@@ -42,6 +43,8 @@ export interface PurchaseResult {
   reputationTxSignature?: string;
   /** Fee taken by the protocol, in base units — surfaced for transparency. */
   protocolFee?: number;
+  /** Buyer-side quality attestation — auto-generated after each purchase. */
+  attestation?: AttestationResult;
 }
 
 /**
@@ -156,6 +159,7 @@ export async function runPurchase(
     };
   }
 
+  const requestStart = Date.now();
   const secondResponse = await fetch(`${SELLER_URL}/service`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -163,10 +167,24 @@ export async function runPurchase(
   });
 
   const body = await secondResponse.json();
+  const latencyMs = Date.now() - requestStart;
 
   if (secondResponse.status !== 200) {
-    return { success: false, message: `Purchase failed (${secondResponse.status})`, signature };
+    // Still attest — seller failed to deliver after payment
+    const attestation = validateResponse(task, null, latencyMs);
+    await submitAttestation(attestation, signature, sellerAuthority.toBase58()).catch(err => {
+      console.error("attestation submit failed:", err);
+    });
+    return { success: false, message: `Purchase failed (${secondResponse.status})`, signature, attestation };
   }
+
+  // Auto-attest: evaluate what we got
+  const attestation = validateResponse(task, body, latencyMs);
+
+  // Submit attestation to seller (non-blocking — don't let it break the purchase flow)
+  await submitAttestation(attestation, signature, sellerAuthority.toBase58()).catch(err => {
+    console.error("attestation submit failed:", err);
+  });
 
   return {
     success: true,
@@ -175,5 +193,28 @@ export async function runPurchase(
     result: body.result,
     reputationTxSignature: signature,
     protocolFee,
+    attestation,
   };
+}
+
+// ---- Attestation submission ----
+
+async function submitAttestation(
+  attestation: AttestationResult,
+  paymentSignature: string,
+  sellerAddress: string,
+): Promise<void> {
+  const res = await fetch(`${SELLER_URL}/attest`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      paymentSignature,
+      sellerAddress,
+      ...attestation,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text().catch(() => "unknown");
+    throw new Error(`Attest endpoint returned ${res.status}: ${err}`);
+  }
 }

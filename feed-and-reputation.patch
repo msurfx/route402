@@ -1,0 +1,129 @@
+diff --git a/frontend/app.js b/frontend/app.js
+index 7f8772a..ab3de12 100644
+--- a/frontend/app.js
++++ b/frontend/app.js
+@@ -132,7 +132,7 @@
+ 
+   /* ---------- rendering: home ---------- */
+   function renderAll() {
+-    renderStats(); renderHighway(); renderTable(); renderActivity();
++    renderStats(); renderHighway(); renderTable(); renderActivity(); renderAgentRep();
+     if (state.current) renderDetail();
+   }
+ 
+@@ -340,6 +340,53 @@
+       h("span", { "class": "when" }, t ? timeAgo(Math.floor(t)) + " " : "", s ? ext(solscanTx(s), "View on Solscan") : ""));
+   }
+ 
++  /* ---------- rendering: agent reputation tracker ---------- */
++  function renderAgentRep() {
++    var grid = $("#agent-rep-grid");
++    if (!grid) return;
++    // Aggregate feed events by agent name
++    var agentMap = {};
++    state.events.forEach(function (e) {
++      var name = e.agent;
++      if (!name) return;
++      if (!agentMap[name]) agentMap[name] = { name: name, total: 0, success: 0, tasks: {}, lastTime: 0 };
++      var a = agentMap[name];
++      var step = e.step || "";
++      if (step === "deliver_result") { a.total++; a.success++; }
++      else if (step === "receive_request") { /* count requests but don't count as success */ }
++      var task = e.task || "";
++      if (task) a.tasks[task] = true;
++      var t = evTime(e);
++      if (t > a.lastTime) a.lastTime = t;
++    });
++    var agents = Object.keys(agentMap).map(function (k) { return agentMap[k]; });
++    if (!agents.length) {
++      setChildren(grid, h("div", { "class": "agent-rep-empty muted" }, "Run the agent chain to see reputation stats here."));
++      return;
++    }
++    agents.sort(function (a, b) { return b.success - a.success || b.lastTime - a.lastTime; });
++    setChildren(grid, agents.map(function (a) {
++      var rate = a.total ? Math.round(a.success / a.total * 100) : 0;
++      var taskList = Object.keys(a.tasks);
++      return h("div", { "class": "agent-rep-card" },
++        h("div", { "class": "rep-header" },
++          h("span", { "class": "rep-name", text: a.name }),
++          h("span", { "class": "rep-badge", text: rate + "% success" })),
++        h("div", { "class": "rep-stats" },
++          h("div", { "class": "rep-stat" },
++            h("div", { "class": "rep-stat-val", text: String(a.success) }),
++            h("div", { "class": "rep-stat-lbl", text: "Delivered" })),
++          h("div", { "class": "rep-stat" },
++            h("div", { "class": "rep-stat-val", text: String(a.total) }),
++            h("div", { "class": "rep-stat-lbl", text: "Total" })),
++          h("div", { "class": "rep-stat" },
++            h("div", { "class": "rep-stat-val", text: rate + "%" }),
++            h("div", { "class": "rep-stat-lbl", text: "Score" }))),
++        taskList.length ? h("div", { "class": "rep-tasks" }, "Tasks: ", taskList.map(function (t) { return h("code", null, t); }).reduce(function (arr, el) { return arr.length ? arr.concat(", ", el) : [el]; }, [])) : "",
++        a.lastTime ? h("div", { "class": "rep-last", text: "Last active: " + timeAgo(Math.floor(a.lastTime)) }) : "");
++    }));
++  }
++
+   /* ---------- rendering: agent detail ---------- */
+   function reasonFor(a) {
+     var c = a.completedCount, b = a.distinctBuyers;
+diff --git a/frontend/dashboard.css b/frontend/dashboard.css
+index 848e5f5..ebb68c6 100644
+--- a/frontend/dashboard.css
++++ b/frontend/dashboard.css
+@@ -195,6 +195,21 @@ input[type=search],select{width:100%;font:inherit;padding:10px 12px;border:1px s
+ .feed li[data-step="deliver_result"]{border-left-color:#22c55e}
+ .feed li[data-step="reputation_update"]{border-left-color:#ec4899}
+ 
++/* agent reputation tracker */
++.agent-rep-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--s4)}
++.agent-rep-card{background:#fff;border:1px solid var(--border);border-radius:var(--r);padding:var(--s4);box-shadow:var(--shadow);border-left:3px solid var(--green)}
++.agent-rep-card .rep-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--s3)}
++.agent-rep-card .rep-name{font-weight:700;font-size:16px}
++.agent-rep-card .rep-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:5px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
++.agent-rep-card .rep-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s2);margin-bottom:var(--s3)}
++.agent-rep-card .rep-stat{text-align:center}
++.agent-rep-card .rep-stat-val{font-size:20px;font-weight:700;line-height:1.3}
++.agent-rep-card .rep-stat-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
++.agent-rep-card .rep-tasks{font-size:12px;color:var(--muted)}
++.agent-rep-card .rep-tasks code{font-family:var(--mono);background:var(--surface);padding:1px 4px;border-radius:3px;font-size:11px}
++.agent-rep-card .rep-last{font-size:11px;color:var(--muted);margin-top:var(--s2)}
++.agent-rep-empty{text-align:center;padding:var(--s6) var(--s4);font-size:14px}
++
+ /* agent page */
+ .crumb{display:inline-block;margin:var(--s5) 0 var(--s3);text-decoration:none;font-weight:600}
+ .ag-head{display:flex;justify-content:space-between;gap:var(--s4);flex-wrap:wrap;align-items:flex-start;margin-bottom:var(--s5)}
+diff --git a/frontend/index.html b/frontend/index.html
+index 361f1a3..caf8c6c 100644
+--- a/frontend/index.html
++++ b/frontend/index.html
+@@ -79,6 +79,31 @@
+         </div>
+       </section>
+ 
++      <section class="section alt" aria-labelledby="act-title">
++        <div class="wrap">
++          <h2 id="act-title">Live protocol feed</h2>
++          <p class="muted sec-sub">Real-time x402 flow: every request, payment, verification and delivery logged as it happens. Each step links to Solscan.</p>
++          <div class="feed-legend">
++            <span class="feed-tag tag-request">Request</span>
++            <span class="feed-tag tag-402">402</span>
++            <span class="feed-tag tag-verify">Verify</span>
++            <span class="feed-tag tag-deliver">Deliver</span>
++            <span class="feed-tag tag-rep">Reputation</span>
++          </div>
++          <ul class="act feed" id="activity" aria-live="polite"></ul>
++        </div>
++      </section>
++
++      <section class="section" aria-labelledby="agent-rep-title">
++        <div class="wrap">
++          <h2 id="agent-rep-title">Agent reputation tracker</h2>
++          <p class="muted sec-sub">Per-agent stats from the live feed. Each agent's purchases, success rate, and last activity — all backed by on-chain transactions.</p>
++          <div class="agent-rep-grid" id="agent-rep-grid">
++            <div class="agent-rep-empty muted">Run the agent chain to see reputation stats here.</div>
++          </div>
++        </div>
++      </section>
++
+       <section class="section" aria-labelledby="hw-title">
+         <div class="wrap">
+           <div class="sec-head">
