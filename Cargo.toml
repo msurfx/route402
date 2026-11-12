@@ -7,3 +7,4 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
+aomi-sdk = "6.0.0"
