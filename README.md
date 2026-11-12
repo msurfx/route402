@@ -85,6 +85,29 @@ Buyer signs reputation   →  On-chain score updated (buyer-attested)
 ---
 
 ## Running locally
+## Aomi chat on the home page
+
+The home page embeds the [Aomi](https://aomi.dev) chat widget (`frontend/aomi.js`,
+loaded from esm.sh, no build step). A visitor signs in with a Solana wallet,
+asks the agent to do something on-chain, and the page watches that wallet. When
+a new confirmed transaction lands it is reported to the seller:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/v1/aomi/sessions` `{ wallet }` | A visitor signed in to the widget. Logged once per wallet as an `aomi_session` feed event. |
+| `POST /api/v1/aomi/actions` `{ wallet, signature, cluster? }` | Verifies the transaction on-chain (confirmed, succeeded, wallet is a party) and logs an `aomi_action` feed event. Unverifiable signatures are rejected. |
+| `GET /api/v1/aomi/activity?wallet=` | Totals and recent actions; `/api/v1/stats` also reports `aomiAgents` and `aomiActions`. |
+
+The side panel then shows the agent's wallet, App ID, recent actions and a QR
+code to continue on Telegram (`/link` attaches the wallet to the Aomi account)
+or in Aomi Chat. Storage is in-memory, like the live feed.
+
+Configure in `frontend/index.html`: `AOMI_APPLICATION_ID` (the activated
+Routex402 App on Aomi; until set, the card shows a placeholder),
+`AOMI_TELEGRAM_BOT` (bot username once registered on Aomi), and
+`AOMI_SOLANA_RPCS` (clusters to watch; devnet by default).
+
+## Running it locally
 
 ### Prerequisites
 

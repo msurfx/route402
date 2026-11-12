@@ -9,9 +9,25 @@
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="stylesheet" href="dashboard.css">
+  <link rel="stylesheet" href="https://unpkg.com/@aomi-labs/widget@4.0.2/dist/styles.css">
+  <link rel="stylesheet" href="aomi.css">
   <script>
     window.SELLER_URL = "https://route402-seller.onrender.com";
     window.BUYER_SERVER_URL = "https://route402-buyer.onrender.com";
+    // Aomi chat (see aomi.js). Application ID is the activated Routex402 App on Aomi.
+    window.AOMI_APPLICATION_ID = "";
+    window.AOMI_BASE_URL = "https://chat.aomi.dev";
+    window.AOMI_CHAT_URL = "https://chat.aomi.dev";
+    window.AOMI_TELEGRAM_BOT = ""; // bot username without @, once registered on Aomi
+    window.AOMI_SOLANA_RPCS = { "solana:devnet": "https://api.devnet.solana.com" };
+  </script>
+  <script type="importmap">
+    {"imports":{
+      "react":"https://esm.sh/react@18.3.1",
+      "react/jsx-runtime":"https://esm.sh/react@18.3.1/jsx-runtime",
+      "react-dom":"https://esm.sh/react-dom@18.3.1",
+      "react-dom/client":"https://esm.sh/react-dom@18.3.1/client"
+    }}
   </script>
 </head>
 <body>
@@ -25,6 +41,7 @@
       </a>
       <button class="nav-toggle" id="nav-toggle" aria-expanded="false" aria-controls="nav" aria-label="Toggle menu">Menu</button>
       <nav class="nav" id="nav" aria-label="Main">
+        <a href="#aomi">Chat</a>
         <a href="#explorer">Explorer</a>
         <a href="#how">How vetting works</a>
         <a href="demo.html">Demo</a>
@@ -115,6 +132,24 @@
             <span class="feed-tag tag-rep">Reputation</span>
           </div>
           <ul class="act feed" id="activity" aria-live="polite"></ul>
+        </div>
+      </section>
+
+      <section class="section" id="aomi" aria-labelledby="aomi-title">
+        <div class="wrap">
+          <div class="sec-head">
+            <div>
+              <h2 id="aomi-title">Chat with an Aomi agent</h2>
+              <p class="muted">Sign in with your Solana wallet and tell the agent what to do on-chain. Once an action lands, your agent appears on Routex402 with a verified record, and you can keep talking to it on Telegram or in Aomi Chat.</p>
+            </div>
+            <a class="link" href="https://aomi.dev" target="_blank" rel="noopener">Powered by Aomi</a>
+          </div>
+          <div class="aomi-grid">
+            <div class="card aomi-chat-card">
+              <div id="aomi-chat" class="aomi-chat"><p class="muted" style="padding:16px">Loading Aomi...</p></div>
+            </div>
+            <aside class="card aomi-side" id="aomi-agent-panel" aria-live="polite"></aside>
+          </div>
         </div>
       </section>
 
@@ -260,6 +295,15 @@
               <p class="muted">50+ pre-built actions for DeFi, NFTs, and token management. Add quality monitoring with one SDK import.</p>
               <span class="compat-tag">SDK</span>
             </a>
+          <h2 id="act-title">Live protocol feed</h2>
+          <p class="muted sec-sub">Real-time x402 flow: every request, payment, verification and delivery logged as it happens. Each step links to Solscan.</p>
+          <div class="feed-legend">
+            <span class="feed-tag tag-request">Request</span>
+            <span class="feed-tag tag-402">402</span>
+            <span class="feed-tag tag-verify">Verify</span>
+            <span class="feed-tag tag-deliver">Deliver</span>
+            <span class="feed-tag tag-rep">Reputation</span>
+            <span class="feed-tag tag-aomi">Aomi</span>
           </div>
         </div>
       </section>
@@ -324,5 +368,7 @@
 
   <script src="vetting.js"></script>
   <script src="app.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" defer></script>
+  <script type="module" src="aomi.js"></script>
 </body>
 </html>

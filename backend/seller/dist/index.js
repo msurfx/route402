@@ -105,7 +105,10 @@ app.post("/service", serviceLimiter, async (req, res) => {
         }
         return res.status(500).json({ error: "service execution failed" });
     }
-    logEvent("deliver_result", `Delivered "${task}" (slot ${output.data.slot}, avg ${output.data.avgTps} TPS) — buyer will record reputation on-chain`, paymentSignature);
+    const deliverMsg = task === "price-oracle"
+        ? `Delivered "${task}" (${output.data.pair} $${output.data.price}, slot ${output.data.slot}) — buyer will record reputation on-chain`
+        : `Delivered "${task}" (slot ${output.data.slot}, avg ${output.data.avgTps} TPS) — buyer will record reputation on-chain`;
+    logEvent("deliver_result", deliverMsg, paymentSignature);
     return res.status(200).json({
         task,
         result: output.summary,
@@ -114,6 +117,18 @@ app.post("/service", serviceLimiter, async (req, res) => {
         sellerAuthority: sellerAuthority.publicKey.toBase58(),
         amountPaid: result.amountPaid,
     });
+});
+// Free preview — lets the homepage show a live price ticker without paying.
+const previewLimiter = rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
+app.get("/preview/price", previewLimiter, async (_req, res) => {
+    try {
+        const output = await performService(connection, "price-oracle", {});
+        res.json({ task: "price-oracle", result: output.summary, data: output.data, preview: true });
+    }
+    catch (err) {
+        console.error("price preview failed:", err);
+        res.status(500).json({ error: "price preview unavailable" });
+    }
 });
 app.get("/agents", async (_req, res) => {
     try {
@@ -135,6 +150,7 @@ app.use("/api/v1", createApiV1Router({
         const profiles = await listSellerProfiles(sellerAuthority);
         return profiles.sort((a, b) => b.reputationScore - a.reputationScore);
     },
+    logEvent,
 }));
 app.listen(PORT, () => {
     console.log(`Seller agent listening on http://localhost:${PORT}`);

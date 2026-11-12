@@ -14,6 +14,7 @@ import BN from "bn.js";
 import { PublicKey, Transaction, Keypair, SystemProgram, } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from "@solana/spl-token";
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
+import { createAomiRouter, createAomiStore } from "./aomi.js";
 function confidence(a) {
     const { completedCount: c, distinctBuyers: b } = a;
     if (c < 5)
@@ -117,6 +118,11 @@ export function createApiV1Router(opts) {
     const [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], programId);
     // Per-IP 60/min; enough for a dashboard, strict enough to resist abuse.
     r.use(rateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false }));
+    const aomiStore = opts.aomiStore ?? createAomiStore();
+    r.use("/aomi", createAomiRouter(aomiStore, {
+        clusters: { "solana:devnet": connection, ...(opts.aomiClusters ?? {}) },
+        logEvent: opts.logEvent ?? (() => { }),
+    }));
     /** GET /api/v1/agents?limit=&offset=&minScore=&tier=&confidence= */
     r.get("/agents", async (req, res) => {
         try {
@@ -198,6 +204,8 @@ export function createApiV1Router(opts) {
                 activeLast30d,
                 confidenceDistribution: confDist,
                 tierDistribution: tierDist,
+                aomiAgents: aomiStore.sessions.size,
+                aomiActions: aomiStore.actions.length,
                 generatedAt: new Date().toISOString(),
             });
         }

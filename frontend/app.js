@@ -320,7 +320,9 @@
     "402_challenge": { label: "402", cls: "tag-402" },
     "verify_payment": { label: "Verify", cls: "tag-verify" },
     "deliver_result": { label: "Deliver", cls: "tag-deliver" },
-    "reputation_update": { label: "Reputation", cls: "tag-rep" }
+    "reputation_update": { label: "Reputation", cls: "tag-rep" },
+    "aomi_session": { label: "Aomi agent", cls: "tag-aomi" },
+    "aomi_action": { label: "Aomi action", cls: "tag-aomi" }
   };
   function renderActivity() {
     var ul = $("#activity");

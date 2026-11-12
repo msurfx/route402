@@ -16,6 +16,7 @@ import {
 } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from "@solana/spl-token";
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
+import { createAomiRouter, createAomiStore, type AomiCluster, type AomiStore } from "./aomi.js";
 
 // ---- vetting logic (mirrors @routex402/sdk and vetting.js) ----
 interface Agent {
@@ -113,6 +114,12 @@ export interface ApiV1Options {
   listAgents: () => Promise<Agent[]>;
   /** Optional: default to this service for pricing hints. */
   defaultPrice?: number;
+  /** Pushes a line into the shared live protocol feed (used by /aomi). */
+  logEvent?: (step: string, message: string, signature?: string) => void;
+  /** Extra clusters the Aomi widget may report actions from; devnet is `connection`. */
+  aomiClusters?: Partial<Record<AomiCluster, Connection>>;
+  /** Shared in-memory store for Aomi sessions and actions. */
+  aomiStore?: AomiStore;
 }
 
 export function createApiV1Router(opts: ApiV1Options): Router {
@@ -127,6 +134,12 @@ export function createApiV1Router(opts: ApiV1Options): Router {
 
   // Per-IP 60/min; enough for a dashboard, strict enough to resist abuse.
   r.use(rateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false }));
+
+  const aomiStore = opts.aomiStore ?? createAomiStore();
+  r.use("/aomi", createAomiRouter(aomiStore, {
+    clusters: { "solana:devnet": connection, ...(opts.aomiClusters ?? {}) },
+    logEvent: opts.logEvent ?? (() => {}),
+  }));
 
   /** GET /api/v1/agents?limit=&offset=&minScore=&tier=&confidence= */
   r.get("/agents", async (req: Request, res: Response) => {
@@ -209,6 +222,8 @@ export function createApiV1Router(opts: ApiV1Options): Router {
         activeLast30d,
         confidenceDistribution: confDist,
         tierDistribution: tierDist,
+        aomiAgents: aomiStore.sessions.size,
+        aomiActions: aomiStore.actions.length,
         generatedAt: new Date().toISOString(),
       });
     } catch (err: any) {

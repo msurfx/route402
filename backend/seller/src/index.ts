@@ -431,6 +431,7 @@ app.use("/api/v1", createApiV1Router({
     const profiles = await listSellerProfiles(sellerAuthority);
     return profiles.sort((a: any, b: any) => b.reputationScore - a.reputationScore);
   },
+  logEvent,
 }));
 
 app.listen(PORT, () => {

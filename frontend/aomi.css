@@ -1,0 +1,62 @@
+/* ===== Aomi chat section ===== */
+.aomi-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr);gap:var(--s4);align-items:start}
+.aomi-chat-card{padding:var(--s3);overflow:hidden}
+/* The widget's sign-in dialog uses its own backdrop blur. WebKit (Safari) does not paint content
+   under nested backdrop filters, so the dialog would show as a blank blur. Keep this card solid. */
+body .card.aomi-chat-card{-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--glass-strong,#fff)}
+/* The widget's mobile sidebar and sign-in dialog are fixed overlays inside this card. While one
+   is open, lift the card above the sticky site top bar (z-index 100) so the overlay is not covered. */
+.aomi-chat-card:has([data-slot="sheet-overlay"][data-state="open"], [role="dialog"][data-state="open"]){z-index:110}
+.aomi-chat{min-height:560px;display:flex;flex-direction:column}
+.aomi-chat .aomi-widget{flex:1;min-height:560px}
+.aomi-wait{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;min-height:560px;text-align:center;gap:var(--s2);color:var(--muted);font-size:14px}
+.aomi-wait .spin{width:22px;height:22px;border:3px solid var(--grey-soft);border-top-color:var(--primary);border-radius:50%;animation:aomi-spin .9s linear infinite}
+@keyframes aomi-spin{to{transform:rotate(360deg)}}
+.aomi-wait .err{color:var(--red);font-weight:600}
+.aomi-setup{display:flex;flex-direction:column;justify-content:center;flex:1;min-height:560px;gap:var(--s3);padding:var(--s4)}
+.aomi-setup code{font-family:var(--mono);font-size:.9em;background:var(--grey-soft);padding:2px 6px;border-radius:5px}
+
+.aomi-side{display:flex;flex-direction:column;gap:var(--s4)}
+.aomi-side .h3{margin-bottom:0}
+.aomi-steps{list-style:none;margin:0;padding:0;display:grid;gap:var(--s2);counter-reset:aomi}
+.aomi-steps li{display:grid;grid-template-columns:26px 1fr;gap:var(--s3);align-items:start;font-size:14px;color:var(--muted);padding:var(--s2) 0;border-bottom:1px solid var(--border)}
+.aomi-steps li:last-child{border-bottom:0}
+.aomi-steps li::before{counter-increment:aomi;content:counter(aomi);display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--grey-soft);color:var(--grey);font-size:12px;font-weight:700}
+.aomi-steps li.done{color:var(--text)}
+.aomi-steps li.done::before{content:"\2713";background:var(--green-soft);color:var(--green)}
+.aomi-steps li.now{color:var(--text);font-weight:600}
+.aomi-steps li.now::before{background:var(--primary-soft);color:var(--primary)}
+.aomi-steps li .sub{display:block;font-weight:400;font-size:13px;color:var(--muted)}
+
+.aomi-kv{display:grid;grid-template-columns:auto 1fr;gap:var(--s2) var(--s3);margin:0;font-size:14px}
+.aomi-kv dt{color:var(--muted)}
+.aomi-kv dd{margin:0;font-family:var(--mono);font-size:13px;word-break:break-all;display:flex;gap:6px;align-items:center}
+.aomi-copy{border:1px solid var(--border);background:transparent;border-radius:6px;padding:1px 7px;font:inherit;font-size:12px;cursor:pointer;color:var(--muted)}
+.aomi-copy:hover{color:var(--primary);border-color:var(--primary)}
+
+.aomi-tg{display:grid;grid-template-columns:auto 1fr;gap:var(--s4);align-items:center}
+.aomi-qr{width:132px;height:132px;background:#fff;border-radius:10px;padding:6px;border:1px solid var(--border)}
+.aomi-qr svg{width:100%;height:100%;display:block}
+.aomi-tg p{margin-bottom:var(--s2);font-size:14px}
+.aomi-actions{display:flex;flex-direction:column;gap:var(--s2)}
+.aomi-actions .btn{width:100%}
+.aomi-live{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--green)}
+.aomi-live i{width:8px;height:8px;border-radius:50%;background:var(--green-bright);box-shadow:0 0 0 4px var(--green-soft)}
+.aomi-recent{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:13px}
+.aomi-recent li{display:flex;justify-content:space-between;gap:var(--s2)}
+.aomi-recent .mono{font-size:12px}
+
+/* live feed tags for Aomi events */
+.tag-aomi{background:#e0f2fe;color:#0369a1}
+.feed li[data-step^="aomi_"]{border-left-color:#0ea5e9}
+
+@media (max-width:900px){.aomi-grid{grid-template-columns:1fr}.aomi-chat,.aomi-chat .aomi-widget,.aomi-wait,.aomi-setup{min-height:520px}}
+@media (max-width:480px){.aomi-tg{grid-template-columns:1fr;justify-items:center;text-align:center}}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .tag-aomi{background:rgba(14,165,233,.12);color:#7dd3fc}
+}
+:root[data-theme="dark"] .tag-aomi{background:rgba(14,165,233,.12);color:#7dd3fc}
+
+.aomi-nowallet{margin:var(--s3) 0 0;padding:10px 12px;border-radius:10px;font-size:13.5px;line-height:1.45;background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .aomi-nowallet{background:rgba(251,146,60,.1);color:#fdba74;border-color:rgba(251,146,60,.3)}}
+:root[data-theme="dark"] .aomi-nowallet{background:rgba(251,146,60,.1);color:#fdba74;border-color:rgba(251,146,60,.3)}
