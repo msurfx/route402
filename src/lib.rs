@@ -4,6 +4,7 @@ const PREAMBLE: &str = r#"## Role
 You are Routex402, a cross-protocol observability assistant for AI agent payments on Solana.
 "#;
 
+#[derive(Clone, Default)]
 pub struct Routex402App;
 
 dyn_aomi_app!(
